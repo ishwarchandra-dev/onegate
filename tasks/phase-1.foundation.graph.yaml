@@ -2,7 +2,7 @@
 phase: 1
 name: foundation
 title: "Phase 1 — Configuration & Storage Foundation"
-status: pending
+status: done
 gate:
   - "Config loads from file + env with schema validation and hot reload"
   - "SQLite schema v1 migrated up/down on fresh and upgraded installs"
@@ -13,7 +13,7 @@ nodes:
   - id: p1.domain-types
     title: "Canonical domain types (Provider, Model, VirtualKey, RequestRecord, Usage)"
     owner: architect
-    status: pending
+    status: done
     depends_on: [p0.gate]
     deliverables:
       - "internal/domain/*.go with package doc"
@@ -24,7 +24,7 @@ nodes:
   - id: p1.config-load
     title: "Config loading: file (~/.onegate + cwd), env override, schema validation"
     owner: go-engineer
-    status: pending
+    status: done
     depends_on: [p1.domain-types]
     deliverables:
       - "internal/config loader + validator + error messages"
@@ -36,7 +36,7 @@ nodes:
   - id: p1.config-hotreload
     title: "Config hot reload (SIGHUP + file watch) with change events"
     owner: go-engineer
-    status: pending
+    status: done
     depends_on: [p1.config-load]
     deliverables:
       - "Reload pipeline publishing typed change events"
@@ -46,7 +46,7 @@ nodes:
   - id: p1.storage-schema
     title: "SQLite schema v1: providers, models, keys, routing rules, requests, rollups"
     owner: storage-engineer
-    status: pending
+    status: done
     depends_on: [p1.domain-types]
     deliverables:
       - "internal/storage: open, migrate (forward-only), close; WAL tuning"
@@ -57,7 +57,7 @@ nodes:
   - id: p1.storage-repos
     title: "Repository layer over schema v1 (CRUD for each aggregate)"
     owner: storage-engineer
-    status: pending
+    status: done
     depends_on: [p1.storage-schema]
     deliverables:
       - "Repo structs with table-driven tests (in-memory SQLite)"
@@ -67,7 +67,7 @@ nodes:
   - id: p1.logging
     title: "slog setup: levels, redaction middleware, trace-ID field convention"
     owner: observability-engineer
-    status: pending
+    status: done
     depends_on: [p1.domain-types]
     deliverables:
       - "internal/observability/logging.go + redaction tests"
@@ -78,7 +78,7 @@ nodes:
   - id: p1.secrets
     title: "Master secret & provider-key encryption at rest (AES-GCM)"
     owner: security-engineer
-    status: pending
+    status: done
     depends_on: [p1.storage-schema]
     deliverables:
       - "internal/auth/crypto: key derivation, encrypt/decrypt, key file handling"
@@ -89,7 +89,7 @@ nodes:
   - id: p1.gate
     title: "Phase 1 gate"
     owner: graph-master
-    status: pending
+    status: done
     depends_on: [p1.domain-types, p1.config-load, p1.config-hotreload, p1.storage-schema, p1.storage-repos, p1.logging, p1.secrets]
     deliverables:
       - "Gate report in worklog"

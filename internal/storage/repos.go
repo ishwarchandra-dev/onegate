@@ -1,0 +1,446 @@
+package storage
+
+import (
+        "database/sql"
+        "encoding/json"
+        "errors"
+        "fmt"
+        "strings"
+        "time"
+
+        "github.com/ishwarchandra-dev/onegate/internal/domain"
+)
+
+// ErrNotFound is returned by repositories when the requested row is absent.
+var ErrNotFound = errors.New("storage: not found")
+
+// nowMS is swappable for deterministic tests.
+var nowMS = func() int64 { return time.Now().UnixMilli() }
+
+func newID(prefix string) string {
+        return fmt.Sprintf("%s_%d_%06d", prefix, nowMS(), time.Now().UnixNano()%1_000_000)
+}
+
+// ---------------------------------------------------------------------------
+// ProviderRepo
+// ---------------------------------------------------------------------------
+
+// ProviderRepo persists providers. API key material lives in APIKeyEnc as
+// an opaque encrypted blob produced by internal/auth; this repo never
+// knows the plaintext.
+type ProviderRepo struct{ s *Store }
+
+// ProviderRecord is the storage shape of a provider.
+type ProviderRecord struct {
+        domain.Provider
+        APIKeyEnc []byte // encrypted blob; nil = no key stored
+}
+
+func (s *Store) Providers() *ProviderRepo { return &ProviderRepo{s} }
+
+// Upsert inserts or updates a provider, assigning ID/CreatedMS when empty.
+// The record is updated in place so callers observe the assigned ID.
+func (r *ProviderRepo) Upsert(rec *ProviderRecord) error {
+        if rec.ID == "" {
+                rec.ID = newID("prov")
+        }
+        if rec.CreatedMS == 0 {
+                rec.CreatedMS = nowMS()
+        }
+        if rec.APIKeyEnc == nil {
+                rec.APIKeyEnc = []byte{} // nil would bind as SQL NULL
+        }
+        rec.UpdatedMS = nowMS()
+        _, err := r.s.db.Exec(`INSERT INTO providers
+                (id, name, protocol, base_url, api_key_enc, enabled, created_ms, updated_ms)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                        name = excluded.name,
+                        protocol = excluded.protocol,
+                        base_url = excluded.base_url,
+                        api_key_enc = excluded.api_key_enc,
+                        enabled = excluded.enabled,
+                        updated_ms = excluded.updated_ms`,
+                rec.ID, rec.Name, string(rec.Protocol), rec.BaseURL, rec.APIKeyEnc,
+                boolToInt(rec.Enabled), rec.CreatedMS, rec.UpdatedMS)
+        if err != nil {
+                return fmt.Errorf("storage: upsert provider: %w", err)
+        }
+        return nil
+}
+
+func (r *ProviderRepo) Get(id string) (ProviderRecord, error) {
+        row := r.s.db.QueryRow(`SELECT id, name, protocol, base_url, api_key_enc,
+                enabled, created_ms, updated_ms FROM providers WHERE id = ?`, id)
+        return scanProvider(row)
+}
+
+func (r *ProviderRepo) List() ([]ProviderRecord, error) {
+        rows, err := r.s.db.Query(`SELECT id, name, protocol, base_url, api_key_enc,
+                enabled, created_ms, updated_ms FROM providers ORDER BY id`)
+        if err != nil {
+                return nil, fmt.Errorf("storage: list providers: %w", err)
+        }
+        defer rows.Close()
+        var out []ProviderRecord
+        for rows.Next() {
+                rec, err := scanProvider(rows)
+                if err != nil {
+                        return nil, err
+                }
+                out = append(out, rec)
+        }
+        return out, rows.Err()
+}
+
+func (r *ProviderRepo) Delete(id string) error {
+        res, err := r.s.db.Exec(`DELETE FROM providers WHERE id = ?`, id)
+        if err != nil {
+                return fmt.Errorf("storage: delete provider: %w", err)
+        }
+        if n, _ := res.RowsAffected(); n == 0 {
+                return ErrNotFound
+        }
+        return nil
+}
+
+type rowScanner interface{ Scan(dest ...any) error }
+
+func scanProvider(row rowScanner) (ProviderRecord, error) {
+        var rec ProviderRecord
+        var protocol string
+        var enabled int
+        var keyEnc []byte
+        if err := row.Scan(&rec.ID, &rec.Name, &protocol, &rec.BaseURL, &keyEnc,
+                &enabled, &rec.CreatedMS, &rec.UpdatedMS); err != nil {
+                if errors.Is(err, sql.ErrNoRows) {
+                        return rec, ErrNotFound
+                }
+                return rec, fmt.Errorf("storage: scan provider: %w", err)
+        }
+        rec.Protocol = domain.ProviderProtocol(protocol)
+        rec.Enabled = enabled != 0
+        rec.APIKeyEnc = keyEnc
+        return rec, nil
+}
+
+// ---------------------------------------------------------------------------
+// ModelRepo (models + their targets)
+// ---------------------------------------------------------------------------
+
+// ModelRepo persists canonical models with their provider targets.
+type ModelRepo struct{ s *Store }
+
+func (s *Store) Models() *ModelRepo { return &ModelRepo{s} }
+
+func (r *ModelRepo) Upsert(m domain.Model) error {
+        if m.ID == "" {
+                return fmt.Errorf("storage: model id required")
+        }
+        if m.CreatedMS == 0 {
+                m.CreatedMS = nowMS()
+        }
+        aliases, err := json.Marshal(m.Aliases)
+        if err != nil {
+                return fmt.Errorf("storage: marshal aliases: %w", err)
+        }
+        caps, err := json.Marshal(m.Capabilities)
+        if err != nil {
+                return fmt.Errorf("storage: marshal capabilities: %w", err)
+        }
+
+        tx, err := r.s.db.Begin()
+        if err != nil {
+                return fmt.Errorf("storage: begin model upsert: %w", err)
+        }
+        defer tx.Rollback() //nolint:errcheck
+
+        if _, err := tx.Exec(`INSERT INTO models
+                (id, aliases_json, caps_json, created_ms, updated_ms)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                        aliases_json = excluded.aliases_json,
+                        caps_json = excluded.caps_json,
+                        updated_ms = excluded.updated_ms`,
+                m.ID, string(aliases), string(caps), m.CreatedMS, nowMS()); err != nil {
+                return fmt.Errorf("storage: upsert model: %w", err)
+        }
+        if _, err := tx.Exec(`DELETE FROM model_targets WHERE model_id = ?`, m.ID); err != nil {
+                return fmt.Errorf("storage: clear model targets: %w", err)
+        }
+        for i, t := range m.Targets {
+                pos := t.Position
+                if pos == 0 {
+                        pos = i
+                }
+                if t.Weight <= 0 {
+                        t.Weight = 1
+                }
+                if t.CostMultiplier == 0 {
+                        t.CostMultiplier = 100
+                }
+                if _, err := tx.Exec(`INSERT INTO model_targets
+                        (model_id, provider_id, provider_model, weight, position, cost_multiplier)
+                        VALUES (?, ?, ?, ?, ?, ?)`,
+                        m.ID, t.ProviderID, t.ProviderModel, t.Weight, pos, t.CostMultiplier); err != nil {
+                        return fmt.Errorf("storage: insert model target: %w", err)
+                }
+        }
+        if err := tx.Commit(); err != nil {
+                return fmt.Errorf("storage: commit model upsert: %w", err)
+        }
+        return nil
+}
+
+func (r *ModelRepo) Get(id string) (domain.Model, error) {
+        row := r.s.db.QueryRow(`SELECT id, aliases_json, caps_json, created_ms, updated_ms
+                FROM models WHERE id = ?`, id)
+        m, err := scanModel(row)
+        if err != nil {
+                return m, err
+        }
+        targets, err := r.targets(id)
+        if err != nil {
+                return m, err
+        }
+        m.Targets = targets
+        return m, nil
+}
+
+func (r *ModelRepo) targets(modelID string) ([]domain.ModelTarget, error) {
+        rows, err := r.s.db.Query(`SELECT provider_id, provider_model, weight, position, cost_multiplier
+                FROM model_targets WHERE model_id = ? ORDER BY position, provider_id`, modelID)
+        if err != nil {
+                return nil, fmt.Errorf("storage: list model targets: %w", err)
+        }
+        defer rows.Close()
+        var out []domain.ModelTarget
+        for rows.Next() {
+                var t domain.ModelTarget
+                if err := rows.Scan(&t.ProviderID, &t.ProviderModel, &t.Weight, &t.Position, &t.CostMultiplier); err != nil {
+                        return nil, fmt.Errorf("storage: scan model target: %w", err)
+                }
+                out = append(out, t)
+        }
+        return out, rows.Err()
+}
+
+func scanModel(row rowScanner) (domain.Model, error) {
+        var m domain.Model
+        var aliases, caps string
+        if err := row.Scan(&m.ID, &aliases, &caps, &m.CreatedMS, &m.UpdatedMS); err != nil {
+                if errors.Is(err, sql.ErrNoRows) {
+                        return m, ErrNotFound
+                }
+                return m, fmt.Errorf("storage: scan model: %w", err)
+        }
+        _ = json.Unmarshal([]byte(aliases), &m.Aliases)
+        _ = json.Unmarshal([]byte(caps), &m.Capabilities)
+        return m, nil
+}
+
+func (r *ModelRepo) Delete(id string) error {
+        res, err := r.s.db.Exec(`DELETE FROM models WHERE id = ?`, id)
+        if err != nil {
+                return fmt.Errorf("storage: delete model: %w", err)
+        }
+        if n, _ := res.RowsAffected(); n == 0 {
+                return ErrNotFound
+        }
+        return nil
+}
+
+// ---------------------------------------------------------------------------
+// VirtualKeyRepo
+// ---------------------------------------------------------------------------
+
+// VirtualKeyRepo persists virtual keys. KeyHash holds the argon2id hash;
+// plaintext keys never reach storage.
+type VirtualKeyRepo struct{ s *Store }
+
+func (s *Store) VirtualKeys() *VirtualKeyRepo { return &VirtualKeyRepo{s} }
+
+func (r *VirtualKeyRepo) Create(k domain.VirtualKey) (domain.VirtualKey, error) {
+        if k.ID == "" {
+                k.ID = newID("vkey")
+        }
+        if k.CreatedMS == 0 {
+                k.CreatedMS = nowMS()
+        }
+        if k.Status == "" {
+                k.Status = domain.KeyActive
+        }
+        scopes, err := json.Marshal(k.Scopes)
+        if err != nil {
+                return k, fmt.Errorf("storage: marshal scopes: %w", err)
+        }
+        limits, err := json.Marshal(k.Limits)
+        if err != nil {
+                return k, fmt.Errorf("storage: marshal limits: %w", err)
+        }
+        _, err = r.s.db.Exec(`INSERT INTO virtual_keys
+                (id, name, prefix, key_hash, scopes_json, limits_json, status, created_ms, expires_ms, last_used_ms)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                k.ID, k.Name, k.Prefix, k.KeyHash, string(scopes), string(limits),
+                string(k.Status), k.CreatedMS, k.ExpiresMS, k.LastUsedMS)
+        if err != nil {
+                return k, fmt.Errorf("storage: create vkey: %w", err)
+        }
+        return k, nil
+}
+
+func (r *VirtualKeyRepo) Get(id string) (domain.VirtualKey, error) {
+        return scanVKey(r.s.db.QueryRow(`SELECT id, name, prefix, key_hash, scopes_json,
+                limits_json, status, created_ms, expires_ms, last_used_ms
+                FROM virtual_keys WHERE id = ?`, id))
+}
+
+// GetByHash looks a key up by its hash (the proxy auth path).
+func (r *VirtualKeyRepo) GetByHash(hash string) (domain.VirtualKey, error) {
+        return scanVKey(r.s.db.QueryRow(`SELECT id, name, prefix, key_hash, scopes_json,
+                limits_json, status, created_ms, expires_ms, last_used_ms
+                FROM virtual_keys WHERE key_hash = ?`, hash))
+}
+
+func (r *VirtualKeyRepo) UpdateStatus(id string, status domain.KeyStatus) error {
+        res, err := r.s.db.Exec(`UPDATE virtual_keys SET status = ? WHERE id = ?`, status, id)
+        if err != nil {
+                return fmt.Errorf("storage: update vkey status: %w", err)
+        }
+        if n, _ := res.RowsAffected(); n == 0 {
+                return ErrNotFound
+        }
+        return nil
+}
+
+func (r *VirtualKeyRepo) TouchLastUsed(id string, atMS int64) error {
+        _, err := r.s.db.Exec(`UPDATE virtual_keys SET last_used_ms = ? WHERE id = ?`, atMS, id)
+        return err // missing row is fine here (best effort)
+}
+
+func scanVKey(row rowScanner) (domain.VirtualKey, error) {
+        var k domain.VirtualKey
+        var scopes, limits, status string
+        if err := row.Scan(&k.ID, &k.Name, &k.Prefix, &k.KeyHash, &scopes, &limits,
+                &status, &k.CreatedMS, &k.ExpiresMS, &k.LastUsedMS); err != nil {
+                if errors.Is(err, sql.ErrNoRows) {
+                        return k, ErrNotFound
+                }
+                return k, fmt.Errorf("storage: scan vkey: %w", err)
+        }
+        k.Status = domain.KeyStatus(status)
+        _ = json.Unmarshal([]byte(scopes), &k.Scopes)
+        _ = json.Unmarshal([]byte(limits), &k.Limits)
+        return k, nil
+}
+
+// ---------------------------------------------------------------------------
+// RequestRepo
+// ---------------------------------------------------------------------------
+
+// RequestRepo persists request records (written by the Phase 5 usage
+// pipeline, read by analytics).
+type RequestRepo struct{ s *Store }
+
+func (s *Store) Requests() *RequestRepo { return &RequestRepo{s} }
+
+func (r *RequestRepo) Insert(rec domain.RequestRecord) error {
+        if rec.ID == "" {
+                rec.ID = rec.TraceID
+        }
+        _, err := r.s.db.Exec(`INSERT INTO requests
+                (id, trace_id, vkey_id, model_requested, model_served, provider_id, status,
+                 error_code, stream, prompt_tokens, completion_tokens, total_tokens,
+                 cost_usd_micros, latency_ms, ttft_ms, attempts, created_ms)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                rec.ID, rec.TraceID, rec.VirtualKeyID, rec.ModelRequested, rec.ModelServed,
+                rec.ProviderID, string(rec.Status), rec.ErrorCode, boolToInt(rec.Stream),
+                rec.PromptTokens, rec.CompletionTokens, rec.TotalTokens, rec.CostUSDMicros,
+                rec.LatencyMS, rec.TTFTMS, rec.Attempts, rec.CreatedMS)
+        if err != nil {
+                return fmt.Errorf("storage: insert request: %w", err)
+        }
+        return nil
+}
+
+// Page is a cursor-paginated result window.
+type Page[T any] struct {
+        Items   []T
+        NextCur string // "" when no more pages
+}
+
+// ListByTime returns requests newest-first, keyed by (created_ms, id).
+// cursor is opaque; empty string starts from the newest.
+func (r *RequestRepo) ListByTime(vkeyID string, limit int, cursor string) (Page[domain.RequestRecord], error) {
+        if limit <= 0 || limit > 500 {
+                limit = 50
+        }
+        where := ""
+        args := []any{}
+        conds := []string{}
+        if vkeyID != "" {
+                conds = append(conds, "vkey_id = ?")
+                args = append(args, vkeyID)
+        }
+        if cur, ok := decodeCursor(cursor); ok {
+                // strictly older than the cursor position
+                conds = append(conds, "(created_ms < ? OR (created_ms = ? AND id < ?))")
+                args = append(args, cur.CreatedMS, cur.CreatedMS, cur.ID)
+        }
+        if len(conds) > 0 {
+                where = "WHERE " + strings.Join(conds, " AND ")
+        }
+        args = append(args, limit+1) // +1 to detect the next page
+
+        rows, err := r.s.db.Query(`SELECT id, trace_id, vkey_id, model_requested, model_served,
+                provider_id, status, error_code, stream, prompt_tokens, completion_tokens,
+                total_tokens, cost_usd_micros, latency_ms, ttft_ms, attempts, created_ms
+                FROM requests `+where+` ORDER BY created_ms DESC, id DESC LIMIT ?`, args...)
+        if err != nil {
+                return Page[domain.RequestRecord]{}, fmt.Errorf("storage: list requests: %w", err)
+        }
+        defer rows.Close()
+
+        var items []domain.RequestRecord
+        for rows.Next() {
+                rec, err := scanRequest(rows)
+                if err != nil {
+                        return Page[domain.RequestRecord]{}, err
+                }
+                items = append(items, rec)
+        }
+        if err := rows.Err(); err != nil {
+                return Page[domain.RequestRecord]{}, err
+        }
+
+        next := ""
+        if len(items) > limit {
+                items = items[:limit]
+                last := items[len(items)-1]
+                next = encodeCursor(last.CreatedMS, last.ID)
+        }
+        return Page[domain.RequestRecord]{Items: items, NextCur: next}, nil
+}
+
+func scanRequest(row rowScanner) (domain.RequestRecord, error) {
+        var rec domain.RequestRecord
+        var status string
+        var stream int
+        if err := row.Scan(&rec.ID, &rec.TraceID, &rec.VirtualKeyID, &rec.ModelRequested,
+                &rec.ModelServed, &rec.ProviderID, &status, &rec.ErrorCode, &stream,
+                &rec.PromptTokens, &rec.CompletionTokens, &rec.TotalTokens,
+                &rec.CostUSDMicros, &rec.LatencyMS, &rec.TTFTMS, &rec.Attempts,
+                &rec.CreatedMS); err != nil {
+                return rec, fmt.Errorf("storage: scan request: %w", err)
+        }
+        rec.Status = domain.RequestStatus(status)
+        rec.Stream = stream != 0
+        return rec, nil
+}
+
+func boolToInt(b bool) int {
+        if b {
+                return 1
+        }
+        return 0
+}
