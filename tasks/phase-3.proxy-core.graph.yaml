@@ -13,7 +13,7 @@ nodes:
   - id: p3.http-server
     title: "Production HTTP server: middleware chain, timeouts, panics, /healthz, /metrics"
     owner: go-engineer
-    status: pending
+    status: done
     depends_on: [p1.gate]
     deliverables:
       - "internal/server: router, middleware (request-id, logging, recover, timeouts)"

@@ -146,6 +146,18 @@ func TestValidateFieldErrors(t *testing.T) {
 		{"bad log level", func(c *Config) { c.LogLevel = "loud" }, "log_level"},
 		{"empty data dir", func(c *Config) { c.DataDir = " " }, "data_dir"},
 		{"fast poll", func(c *Config) { c.Reload.PollMS = 10 }, "reload.poll_ms"},
+		{"zero read header", func(c *Config) { c.HTTP.ReadHeaderTimeoutMS = 0 }, "http.read_header_timeout_ms"},
+		{"negative read", func(c *Config) { c.HTTP.ReadTimeoutMS = -1 }, "http"},
+		{"negative write", func(c *Config) { c.HTTP.WriteTimeoutMS = -5 }, "http"},
+		{"negative idle", func(c *Config) { c.HTTP.IdleTimeoutMS = -1 }, "http"},
+		{
+			"read below header",
+			func(c *Config) {
+				c.HTTP.ReadTimeoutMS = 1000
+				c.HTTP.ReadHeaderTimeoutMS = 5000
+			},
+			"http.read_timeout_ms",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -171,5 +183,68 @@ func TestDerivedPaths(t *testing.T) {
 	}
 	if got, want := cfg.MasterKeyPath(), "/data/master.key"; got != want {
 		t.Fatalf("MasterKeyPath: want %q got %q", want, got)
+	}
+}
+
+func TestHTTPFileOverridesDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "onegate.json", `{
+                "http": {
+                        "read_header_timeout_ms": 3000,
+                        "write_timeout_ms": 60000
+                }
+        }`)
+
+	cfg, err := Load(LoadOptions{Path: path})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.HTTP.ReadHeaderTimeoutMS != 3000 {
+		t.Errorf("read_header: want 3000, got %d", cfg.HTTP.ReadHeaderTimeoutMS)
+	}
+	if cfg.HTTP.WriteTimeoutMS != 60000 {
+		t.Errorf("write: want 60000, got %d", cfg.HTTP.WriteTimeoutMS)
+	}
+	// unmentioned fields keep defaults
+	if cfg.HTTP.ReadTimeoutMS != Default().HTTP.ReadTimeoutMS {
+		t.Errorf("read should keep default, got %d", cfg.HTTP.ReadTimeoutMS)
+	}
+	if cfg.HTTP.IdleTimeoutMS != Default().HTTP.IdleTimeoutMS {
+		t.Errorf("idle should keep default, got %d", cfg.HTTP.IdleTimeoutMS)
+	}
+}
+
+func TestHTTPEnvOverridesFile(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "onegate.json", `{"http": {"read_header_timeout_ms": 3000}}`)
+	t.Setenv("ONEGATE_HTTP_READ_HEADER_TIMEOUT_MS", "2000")
+	t.Setenv("ONEGATE_HTTP_IDLE_TIMEOUT_MS", "60000")
+
+	cfg, err := Load(LoadOptions{Path: path})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.HTTP.ReadHeaderTimeoutMS != 2000 {
+		t.Errorf("env read_header: want 2000, got %d", cfg.HTTP.ReadHeaderTimeoutMS)
+	}
+	if cfg.HTTP.IdleTimeoutMS != 60000 {
+		t.Errorf("env idle: want 60000, got %d", cfg.HTTP.IdleTimeoutMS)
+	}
+}
+
+func TestHTTPEnvInvalidIgnored(t *testing.T) {
+	t.Setenv("ONEGATE_HTTP_READ_HEADER_TIMEOUT_MS", "not-a-number")
+	t.Setenv("ONEGATE_HTTP_WRITE_TIMEOUT_MS", "-3")
+
+	cfg, err := Load(LoadOptions{HomeDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	d := Default().HTTP
+	if cfg.HTTP.ReadHeaderTimeoutMS != d.ReadHeaderTimeoutMS {
+		t.Errorf("invalid env should be ignored, got read_header %d", cfg.HTTP.ReadHeaderTimeoutMS)
+	}
+	if cfg.HTTP.WriteTimeoutMS != d.WriteTimeoutMS {
+		t.Errorf("negative env should be ignored, got write %d", cfg.HTTP.WriteTimeoutMS)
 	}
 }

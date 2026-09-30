@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -27,8 +28,36 @@ type Config struct {
 	// LogLevel is one of: debug | info | warn | error.
 	LogLevel string `json:"log_level"`
 
+	// HTTP tunes the public listener. Timeouts are enforced by the
+	// Phase 3 server package; see docs/adr/005-http-server.md.
+	HTTP HTTPConfig `json:"http"`
+
 	// Reload controls the hot-reload watcher (p1.config-hotreload).
 	Reload ReloadConfig `json:"reload"`
+}
+
+// HTTPConfig carries the HTTP server timeout policy in milliseconds.
+// Zero means disabled: read/write timeouts default OFF because streaming
+// responses must not be cut mid-flight; read_header is the slowloris
+// guard and must stay > 0 (validation enforces it on the resolved config).
+type HTTPConfig struct {
+	// ReadHeaderTimeoutMS bounds reading request headers (slowloris
+	// protection). Required: 0 in the final config is a validation error.
+	ReadHeaderTimeoutMS int `json:"read_header_timeout_ms"`
+
+	// ReadTimeoutMS bounds reading the whole request (headers + body).
+	// 0 = disabled. Keep disabled for large chat payloads unless the
+	// deployment demands it.
+	ReadTimeoutMS int `json:"read_timeout_ms"`
+
+	// WriteTimeoutMS bounds writing the response. 0 = disabled. Must stay
+	// disabled (or be set generously) when streaming: it also caps the
+	// lifetime of streaming responses.
+	WriteTimeoutMS int `json:"write_timeout_ms"`
+
+	// IdleTimeoutMS bounds keep-alive connections between requests.
+	// 0 = disabled.
+	IdleTimeoutMS int `json:"idle_timeout_ms"`
 }
 
 // ReloadConfig tunes the config watcher.
@@ -47,6 +76,12 @@ func Default() Config {
 		Port:     7420,
 		DataDir:  ".onegate",
 		LogLevel: "info",
+		HTTP: HTTPConfig{
+			ReadHeaderTimeoutMS: 10000,
+			ReadTimeoutMS:       0,
+			WriteTimeoutMS:      0,
+			IdleTimeoutMS:       120000,
+		},
 		Reload: ReloadConfig{
 			Enabled: true,
 			PollMS:  2000,
@@ -142,7 +177,15 @@ type fileConfig struct {
 	Port     *int           `json:"port"`
 	DataDir  *string        `json:"data_dir"`
 	LogLevel *string        `json:"log_level"`
+	HTTP     *httpSection   `json:"http"`
 	Reload   *reloadSection `json:"reload"`
+}
+
+type httpSection struct {
+	ReadHeaderTimeoutMS *int `json:"read_header_timeout_ms"`
+	ReadTimeoutMS       *int `json:"read_timeout_ms"`
+	WriteTimeoutMS      *int `json:"write_timeout_ms"`
+	IdleTimeoutMS       *int `json:"idle_timeout_ms"`
 }
 
 type reloadSection struct {
@@ -178,6 +221,20 @@ func mergeFile(cfg *Config, fc fileConfig) {
 	if fc.LogLevel != nil {
 		cfg.LogLevel = *fc.LogLevel
 	}
+	if fc.HTTP != nil {
+		if fc.HTTP.ReadHeaderTimeoutMS != nil {
+			cfg.HTTP.ReadHeaderTimeoutMS = *fc.HTTP.ReadHeaderTimeoutMS
+		}
+		if fc.HTTP.ReadTimeoutMS != nil {
+			cfg.HTTP.ReadTimeoutMS = *fc.HTTP.ReadTimeoutMS
+		}
+		if fc.HTTP.WriteTimeoutMS != nil {
+			cfg.HTTP.WriteTimeoutMS = *fc.HTTP.WriteTimeoutMS
+		}
+		if fc.HTTP.IdleTimeoutMS != nil {
+			cfg.HTTP.IdleTimeoutMS = *fc.HTTP.IdleTimeoutMS
+		}
+	}
 	if fc.Reload != nil {
 		if fc.Reload.Enabled != nil {
 			cfg.Reload.Enabled = *fc.Reload.Enabled
@@ -204,6 +261,38 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("ONEGATE_LOG_LEVEL"); v != "" {
 		cfg.LogLevel = strings.ToLower(v)
 	}
+	applyHTTPEnv(&cfg.HTTP)
+}
+
+// applyHTTPEnv overlays ONEGATE_HTTP_* environment variables. Invalid
+// integers are ignored deliberately: failing the whole process on a
+// stray env var is worse than keeping the configured value.
+func applyHTTPEnv(h *HTTPConfig) {
+	if v, ok := envInt("ONEGATE_HTTP_READ_HEADER_TIMEOUT_MS"); ok {
+		h.ReadHeaderTimeoutMS = v
+	}
+	if v, ok := envInt("ONEGATE_HTTP_READ_TIMEOUT_MS"); ok {
+		h.ReadTimeoutMS = v
+	}
+	if v, ok := envInt("ONEGATE_HTTP_WRITE_TIMEOUT_MS"); ok {
+		h.WriteTimeoutMS = v
+	}
+	if v, ok := envInt("ONEGATE_HTTP_IDLE_TIMEOUT_MS"); ok {
+		h.IdleTimeoutMS = v
+	}
+}
+
+// envInt reads a non-negative integer env var.
+func envInt(name string) (int, bool) {
+	v := os.Getenv(name)
+	if v == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 func displayPath(path string) string {

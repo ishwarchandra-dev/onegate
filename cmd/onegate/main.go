@@ -23,6 +23,7 @@ import (
 
 	"github.com/ishwarchandra-dev/onegate/internal/config"
 	"github.com/ishwarchandra-dev/onegate/internal/observability"
+	"github.com/ishwarchandra-dev/onegate/internal/server"
 	"github.com/ishwarchandra-dev/onegate/internal/storage"
 	"github.com/ishwarchandra-dev/onegate/internal/version"
 )
@@ -105,23 +106,22 @@ func run() error {
 		defer watcher.Stop()
 	}
 
-	// --- HTTP server (Phase 0 surface; proxy endpoints arrive Phase 3) --
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"ok","version":%q,"schema_version":%d}`,
-			version.Version, schemaVer)
+	// --- HTTP server (p3.http-server) -----------------------------------
+	// The router owns the middleware chain (request-id -> access-log
+	// -> recover) and the listener timeout policy. Proxy endpoints
+	// register onto the mux in p3.ingest-endpoints.
+	router := server.New(server.Options{
+		Logger: logger,
+		Timeouts: server.Timeouts{
+			ReadHeader: time.Duration(cfg.HTTP.ReadHeaderTimeoutMS) * time.Millisecond,
+			Read:       time.Duration(cfg.HTTP.ReadTimeoutMS) * time.Millisecond,
+			Write:      time.Duration(cfg.HTTP.WriteTimeoutMS) * time.Millisecond,
+			Idle:       time.Duration(cfg.HTTP.IdleTimeoutMS) * time.Millisecond,
+		},
+		Version:       version.Version,
+		SchemaVersion: schemaVer,
 	})
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		fmt.Fprintf(w, "OneGate %s — gateway core arrives in Phase 3\n", version.String())
-	})
-
-	srv := &http.Server{
-		Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	srv := router.Server(fmt.Sprintf("%s:%d", cfg.Host, cfg.Port))
 
 	errCh := make(chan error, 1)
 	go func() {

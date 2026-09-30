@@ -48,6 +48,38 @@ func Validate(cfg Config) error {
 			Message: fmt.Sprintf("must be >= 100ms, got %d", cfg.Reload.PollMS),
 		}
 	}
+	if err := validateHTTP(cfg.HTTP); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateHTTP checks the listener timeout policy. Durations are
+// milliseconds; zero disables everything except read_header, which is the
+// slowloris guard and therefore mandatory (docs/adr/005-http-server.md).
+func validateHTTP(h HTTPConfig) error {
+	if h.ReadHeaderTimeoutMS <= 0 {
+		return &ValidationError{
+			Path:    "http.read_header_timeout_ms",
+			Message: fmt.Sprintf("must be > 0 (slowloris guard), got %d", h.ReadHeaderTimeoutMS),
+		}
+	}
+	if h.ReadTimeoutMS < 0 || h.WriteTimeoutMS < 0 || h.IdleTimeoutMS < 0 {
+		return &ValidationError{
+			Path: "http",
+			Message: fmt.Sprintf("timeouts must be >= 0 (read=%d write=%d idle=%d)",
+				h.ReadTimeoutMS, h.WriteTimeoutMS, h.IdleTimeoutMS),
+		}
+	}
+	// ReadTimeout covers headers + body, so it must dominate
+	// ReadHeaderTimeout when enabled.
+	if h.ReadTimeoutMS > 0 && h.ReadTimeoutMS < h.ReadHeaderTimeoutMS {
+		return &ValidationError{
+			Path: "http.read_timeout_ms",
+			Message: fmt.Sprintf("must be >= read_header_timeout_ms (%d) when enabled, got %d",
+				h.ReadHeaderTimeoutMS, h.ReadTimeoutMS),
+		}
+	}
 	return nil
 }
 
