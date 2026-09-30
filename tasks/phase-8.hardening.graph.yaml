@@ -1,0 +1,91 @@
+# OneGate task graph — Phase 8: Hardening
+phase: 8
+name: hardening
+title: "Phase 8 — Performance, Security & Resilience Hardening"
+status: pending
+gate:
+  - "Load tests: sustained RPS soak + burst within latency budgets (p99 tracked)"
+  - "Chaos catalog executed; every finding fixed or node-tracked"
+  - "Security review complete: threat model updated, govulncheck clean"
+  - "Crash recovery: kill -9 matrix converges to explainable state"
+
+nodes:
+  - id: p8.load-soak
+    title: "Load test: sustained RPS soak (mixed stream/non-stream) with budget report"
+    owner: performance-engineer
+    status: pending
+    depends_on: [p7.gate]
+    deliverables:
+      - "scripts/loadtests/soak + results with p50/p95/p99 TTFT and throughput"
+    acceptance:
+      - "No latency budget regression >10%; no goroutine/fd growth over soak"
+
+  - id: p8.load-burst
+    title: "Load test: burst + stream-churn scenarios; graceful degradation behavior"
+    owner: performance-engineer
+    status: pending
+    depends_on: [p7.gate]
+    deliverables:
+      - "Burst scenarios + degradation report (queue limits, 503 posture)"
+    acceptance:
+      - "Degradation is explicit and observable, never silent queuing"
+
+  - id: p8.chaos-catalog
+    title: "Chaos catalog run: provider outages, truncation, stalls, disk-full, fd exhaustion"
+    owner: chaos-engineer
+    status: pending
+    depends_on: [p7.gate]
+    deliverables:
+      - "Scenario results with reproducers under scripts/chaos/"
+    acceptance:
+      - "Every scenario matches its written expected behavior or yields a fix node"
+
+  - id: p8.crash-recovery
+    title: "Crash recovery matrix: kill -9 at request/commit/migration moments; WAL recovery"
+    owner: chaos-engineer
+    status: pending
+    depends_on: [p7.gate]
+    deliverables:
+      - "Crash test suite + reconciliation report (usage, keys, health)"
+    acceptance:
+      - "Post-restart state converges; in-flight usage reconciled or accounted"
+
+  - id: p8.security-review
+    title: "Security review: threat model refresh, auth audit, SSRF re-check, dependency CVEs"
+    owner: security-engineer
+    status: pending
+    depends_on: [p7.gate]
+    deliverables:
+      - "docs/security/threat-model.md v2 + findings register"
+    acceptance:
+      - "All high findings fixed; govulncheck clean in CI"
+
+  - id: p8.fuzzing
+    title: "Fuzzing: protocol parsers + SSE framing + config parsing"
+    owner: qa-engineer
+    status: pending
+    depends_on: [p7.gate]
+    deliverables:
+      - "Go native fuzz targets with seeded corpora committed"
+    acceptance:
+      - "Fuzz clean for sustained CI runs; crashes become fixtures + fixes"
+
+  - id: p8.perf-fixes
+    title: "Optimization cycle from load/chaos findings (profile-driven only)"
+    owner: performance-engineer
+    status: pending
+    depends_on: [p8.load-soak, p8.load-burst, p8.chaos-catalog]
+    deliverables:
+      - "Optimizations each with before/after benchmark tables"
+    acceptance:
+      - "No correctness trades; all benchmarks re-run 3x"
+
+  - id: p8.gate
+    title: "Phase 8 gate"
+    owner: graph-master
+    status: pending
+    depends_on: [p8.load-soak, p8.load-burst, p8.chaos-catalog, p8.crash-recovery, p8.security-review, p8.fuzzing, p8.perf-fixes]
+    deliverables:
+      - "Gate report + hardening evidence pack"
+    acceptance:
+      - "All gate criteria verified"

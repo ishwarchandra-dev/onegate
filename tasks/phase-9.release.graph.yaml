@@ -1,0 +1,101 @@
+# OneGate task graph — Phase 9: Release
+phase: 9
+name: release
+title: "Phase 9 — Single Binary, Distribution & v1.0"
+status: pending
+gate:
+  - "go:embed dashboard: one binary serves UI + API + proxy"
+  - "Build matrix: linux/darwin/windows amd64+arm64 with checksums"
+  - "npx launcher package published and smoke-tested"
+  - "User docs complete; changelog assembled; v1.0.0 tagged"
+
+nodes:
+  - id: p9.embed-decision
+    title: "ADR: SSR-serve vs SPA mode for embedded dashboard (bundle size, no-node constraint)"
+    owner: architect
+    status: pending
+    depends_on: [p8.gate]
+    deliverables:
+      - "docs/adr/ embedding decision with bundle-size evidence"
+    acceptance:
+      - "Decision accounts for go:embed constraints and offline single-binary story"
+
+  - id: p9.embed-pipeline
+    title: "Embed pipeline: web build → go:embed → single binary serving UI"
+    owner: go-engineer
+    status: pending
+    depends_on: [p9.embed-decision]
+    deliverables:
+      - "internal/webfs embed + CI gate refusing builds without dashboard"
+    acceptance:
+      - "Binary serves dashboard, API, and proxy on one port; gzip/br where applicable"
+
+  - id: p9.build-matrix
+    title: "Cross-compile release matrix + checksums + provenance manifest"
+    owner: devops-engineer
+    status: pending
+    depends_on: [p9.embed-pipeline]
+    deliverables:
+      - "scripts/release/build.sh + GitHub Release automation"
+    acceptance:
+      - "All targets smoke-tested: start, /healthz, dashboard loads"
+
+  - id: p9.docker
+    title: "Docker images: multi-stage, versioned tags, minimal final layer"
+    owner: devops-engineer
+    status: pending
+    depends_on: [p9.embed-pipeline]
+    deliverables:
+      - "Dockerfile (root) + image publish workflow"
+    acceptance:
+      - "Image runs as non-root with a volume for the data dir"
+
+  - id: p9.npx-launcher
+    title: "npx launcher package (onegate on npm): download-or-bundle strategy + fallbacks"
+    owner: devops-engineer
+    status: pending
+    depends_on: [p9.build-matrix]
+    deliverables:
+      - "launcher/ npm package with platform resolution and checksum verification"
+    acceptance:
+      - "npx onegate works on all matrix platforms; corrupt download refuses to run"
+
+  - id: p9.cli-polish
+    title: "CLI surface: onegate serve/import/keys/version/config with help text review"
+    owner: technical-writer
+    status: pending
+    depends_on: [p9.embed-pipeline, p7.config-import]
+    deliverables:
+      - "CLI reference docs + consistent flags + exit codes"
+    acceptance:
+      - "Every flag documented; exit codes table published"
+
+  - id: p9.user-docs
+    title: "User guide complete: quickstart, providers, routing, keys, dashboard, troubleshooting"
+    owner: technical-writer
+    status: pending
+    depends_on: [p9.embed-pipeline]
+    deliverables:
+      - "docs/ guide set verified against a clean install"
+    acceptance:
+      - "5-minute quickstart tested by a fresh user; all flags cross-checked"
+
+  - id: p9.changelog-v1
+    title: "Changelog assembly + v1.0.0 release notes from graph history"
+    owner: release-manager
+    status: pending
+    depends_on: [p9.build-matrix, p9.docker, p9.npx-launcher, p9.cli-polish, p9.user-docs]
+    deliverables:
+      - "CHANGELOG.md + release notes + upgrade guide"
+    acceptance:
+      - "Notes assembled from done-nodes; upgrade path from OmniRoute documented"
+
+  - id: p9.gate
+    title: "Phase 9 gate: v1.0.0 ship decision"
+    owner: graph-master
+    status: pending
+    depends_on: [p9.embed-decision, p9.embed-pipeline, p9.build-matrix, p9.docker, p9.npx-launcher, p9.cli-polish, p9.user-docs, p9.changelog-v1]
+    deliverables:
+      - "Ship decision recorded with evidence links"
+    acceptance:
+      - "All gates 0-9 closed; release checklist 100%"

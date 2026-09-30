@@ -1,0 +1,105 @@
+# OneGate task graph — Phase 0: Repository & Workflow Scaffold
+# Protocol: docs/graph-engineering.md
+phase: 0
+name: scaffold
+title: "Phase 0 — Repository & Workflow Scaffold"
+status: done
+gate:
+  - "go build ./... && go vet ./... pass on a clean checkout"
+  - "web dashboard builds (bun run build) with shadcn radix-mira preset"
+  - "24 agent definitions present and loadable"
+  - "10 phase graphs validate (scripts/graph_status.py --check)"
+  - "CI workflow green on first push to main"
+
+nodes:
+  - id: p0.repo-init
+    title: "Repository skeleton, Go module & workspace, tooling configs"
+    owner: devops-engineer
+    status: done
+    depends_on: []
+    deliverables:
+      - "go.mod / go.work (Go 1.24)"
+      - "Makefile with build/run/test/graph/web targets"
+      - ".gitignore, .editorconfig, .golangci.yml, LICENSE (MIT)"
+    acceptance:
+      - "go build ./... succeeds"
+      - "make build produces bin/onegate"
+
+  - id: p0.go-skeleton
+    title: "Entrypoint, version, config skeleton with graceful shutdown"
+    owner: go-engineer
+    status: done
+    depends_on: [p0.repo-init]
+    deliverables:
+      - "cmd/onegate/main.go (flags, slog JSON, /healthz, graceful shutdown)"
+      - "internal/version (ldflags-injected metadata)"
+      - "internal/config (Default() shape)"
+    acceptance:
+      - "go vet clean; -version flag prints banner"
+      - "SIGTERM triggers graceful shutdown within 10s"
+
+  - id: p0.web-scaffold
+    title: "Dashboard scaffold via shadcn CLI (react-router template, radix-mira, RTL)"
+    owner: frontend-engineer
+    status: done
+    depends_on: [p0.repo-init]
+    deliverables:
+      - "web/ React Router 7 framework-mode app (bun, Tailwind v4, shadcn)"
+      - "vite.config.ts /api proxy to 127.0.0.1:7420"
+      - "components.json (radix-mira preset, rtl: true)"
+    acceptance:
+      - "bun run build && bun run typecheck pass"
+      - "dev server proxies /api to the gateway"
+
+  - id: p0.ci
+    title: "CI workflow: Go + dashboard + graph integrity jobs"
+    owner: devops-engineer
+    status: done
+    depends_on: [p0.repo-init, p0.go-skeleton, p0.web-scaffold]
+    deliverables:
+      - ".github/workflows/ci.yaml (go, web-bun, graph-check jobs)"
+    acceptance:
+      - "All three jobs green on main"
+
+  - id: p0.agents
+    title: "24 agent definitions in .claude/agents/"
+    owner: graph-master
+    status: done
+    depends_on: [p0.repo-init]
+    deliverables:
+      - ".claude/agents/*.md (24 files, YAML frontmatter + charter)"
+    acceptance:
+      - "Every agent file has name, description, tools, model, charter, guardrails"
+      - "Coverage: engineering, domain, process, support roles — no gaps for phases 1-9"
+
+  - id: p0.graphs
+    title: "Task graphs for phases 0-9 + graph tooling"
+    owner: graph-master
+    status: done
+    depends_on: [p0.repo-init, p0.agents]
+    deliverables:
+      - "tasks/phase-{0..9}.*.graph.yaml"
+      - "scripts/graph_status.py (board + --check validation)"
+    acceptance:
+      - "DAG validates: unique IDs, resolvable deps, no cycles, phase gates present"
+      - "make graph prints the board"
+
+  - id: p0.docs
+    title: "Core docs: README, roadmap, architecture, graph protocol"
+    owner: technical-writer
+    status: done
+    depends_on: [p0.repo-init, p0.graphs]
+    deliverables:
+      - "README.md, docs/roadmap.md, docs/architecture.md, docs/graph-engineering.md"
+    acceptance:
+      - "A new contributor can go from clone to graph board in < 10 minutes"
+
+  - id: p0.gate
+    title: "Phase 0 gate: verify definition-of-done"
+    owner: graph-master
+    status: done
+    depends_on: [p0.repo-init, p0.go-skeleton, p0.web-scaffold, p0.ci, p0.agents, p0.graphs, p0.docs]
+    deliverables:
+      - "First push to main; CI green"
+    acceptance:
+      - "All gate criteria above verified"

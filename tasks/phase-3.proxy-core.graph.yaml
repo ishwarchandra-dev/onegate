@@ -1,0 +1,106 @@
+# OneGate task graph — Phase 3: Proxy Core
+phase: 3
+name: proxy-core
+title: "Phase 3 — Reverse Proxy Core & Fallback Chains"
+status: pending
+gate:
+  - "Client → gateway → provider round-trip for all three protocols"
+  - "Streaming passthrough with TTFT overhead < 10ms vs direct (mock harness)"
+  - "Fallback chain retries before first byte only, proven by tests"
+  - "Client disconnect cancels provider request, no goroutine leaks (goleak)"
+
+nodes:
+  - id: p3.http-server
+    title: "Production HTTP server: middleware chain, timeouts, panics, /healthz, /metrics"
+    owner: go-engineer
+    status: pending
+    depends_on: [p1.gate]
+    deliverables:
+      - "internal/server: router, middleware (request-id, logging, recover, timeouts)"
+    acceptance:
+      - "Configurable read/write/idle timeouts; panic returns 500 not a dead connection"
+      - "Middleware order documented and tested"
+
+  - id: p3.ingest-endpoints
+    title: "Proxy endpoints: /v1/chat/completions, /v1/messages, gemini path"
+    owner: go-engineer
+    status: pending
+    depends_on: [p3.http-server, p2.canonical-schema]
+    deliverables:
+      - "Endpoint handlers: auth extraction, protocol detection, request ID assignment"
+    acceptance:
+      - "Endpoint shapes match OmniRoute v3.8.52 routing table"
+      - "401/403 envelopes match legacy error schema"
+
+  - id: p3.upstream-client
+    title: "Provider HTTP client: connection pooling, per-provider base config, retry-safe transport"
+    owner: go-engineer
+    status: pending
+    depends_on: [p3.http-server]
+    deliverables:
+      - "internal/proxy/client: pooled transport, header building, auth injection"
+    acceptance:
+      - "Connection reuse verified (single conn per provider under load)"
+      - "SSRF guard: scheme allowlist, metadata-IP block by default"
+
+  - id: p3.stream-pipeline
+    title: "Streaming pipeline: provider SSE in → canonical events → client SSE out"
+    owner: streaming-engineer
+    status: pending
+    depends_on: [p3.upstream-client, p2.openai-adapter, p2.anthropic-adapter, p2.gemini-adapter]
+    deliverables:
+      - "internal/stream: frame reader/writer, incremental JSON, flush policy"
+    acceptance:
+      - "Split-chunk and split-UTF-8 fixtures pass"
+      - "TTFT benchmark within budget vs direct-to-mock"
+
+  - id: p3.nonstream-path
+    title: "Non-streaming path: buffered request/response with size caps"
+    owner: go-engineer
+    status: pending
+    depends_on: [p3.upstream-client]
+    deliverables:
+      - "Buffered proxy path with configurable max body sizes"
+    acceptance:
+      - "Oversized bodies fail fast with correct 413 envelope"
+
+  - id: p3.fallback-chain
+    title: "Fallback execution engine (retry-before-first-byte semantics)"
+    owner: routing-specialist
+    status: pending
+    depends_on: [p3.upstream-client, p3.stream-pipeline]
+    deliverables:
+      - "Attempt loop: candidate order, safety classification, abort rules, attempt trace"
+    acceptance:
+      - "Retry only on safe failures; never after bytes emitted to client"
+      - "Every attempt traced and logged with outcome + timing"
+
+  - id: p3.cancellation
+    title: "Lifecycle & cancellation: client disconnect → provider cancel → usage finalize"
+    owner: streaming-engineer
+    status: pending
+    depends_on: [p3.stream-pipeline, p3.fallback-chain]
+    deliverables:
+      - "Context propagation tests; usage event always finalized (even on cancel)"
+    acceptance:
+      - "goleak clean across cancel/timeout/panic scenarios"
+
+  - id: p3.e2e-mocks
+    title: "End-to-end tests against mock provider harness (all protocols, stream + non-stream)"
+    owner: qa-engineer
+    status: pending
+    depends_on: [p3.ingest-endpoints, p3.stream-pipeline, p3.nonstream-path, p3.fallback-chain, p3.cancellation]
+    deliverables:
+      - "System test suite + mock provider binaries"
+    acceptance:
+      - "Happy paths, error paths, and cancel paths all covered per protocol"
+
+  - id: p3.gate
+    title: "Phase 3 gate"
+    owner: graph-master
+    status: pending
+    depends_on: [p3.http-server, p3.ingest-endpoints, p3.upstream-client, p3.stream-pipeline, p3.nonstream-path, p3.fallback-chain, p3.cancellation, p3.e2e-mocks]
+    deliverables:
+      - "Gate report + latency budget table"
+    acceptance:
+      - "All gate criteria verified with benchmark evidence"

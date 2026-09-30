@@ -1,0 +1,85 @@
+# OneGate task graph — Phase 5: Observability & Analytics
+phase: 5
+name: observability
+title: "Phase 5 — Observability & Usage Analytics"
+status: pending
+gate:
+  - "Every request emits: trace ID, per-attempt logs, final usage event"
+  - "Metrics: counters + TTFT/latency histograms per provider/model/outcome"
+  - "Usage rollups power hour/day aggregates without table scans"
+  - "Live log SSE feed to dashboard with filters and redaction"
+
+nodes:
+  - id: p5.trace-context
+    title: "Trace ID propagation through server → routing → attempts → response"
+    owner: observability-engineer
+    status: pending
+    depends_on: [p3.gate]
+    deliverables:
+      - "Context keys, header echo (x-request-id), log field injection"
+    acceptance:
+      - "A single grep-able ID spans the whole request in logs"
+
+  - id: p5.usage-events
+    title: "Usage event pipeline: capture, enrich, batch-write to storage"
+    owner: observability-engineer
+    status: pending
+    depends_on: [p5.trace-context, p1.storage-repos]
+    deliverables:
+      - "Bounded queue + background writer; drop-and-count on overflow"
+    acceptance:
+      - "Writer never blocks proxy path; counts reconciled under load test"
+      - "Final usage event emitted exactly once per request (incl. cancels)"
+
+  - id: p5.metrics
+    title: "Prometheus metrics registry and /metrics endpoint (admin-gated)"
+    owner: observability-engineer
+    status: pending
+    depends_on: [p5.trace-context]
+    deliverables:
+      - "onereq_total, ttft/latency histograms, inflight gauge, quota rejections"
+    acceptance:
+      - "Units in names; bounded cardinality (enumerated label sets)"
+      - "Each metric documents its dashboard consumer"
+
+  - id: p5.rollups
+    title: "Usage rollup tables + aggregation queries for analytics"
+    owner: storage-engineer
+    status: pending
+    depends_on: [p5.usage-events]
+    deliverables:
+      - "Hourly/daily rollups maintained incrementally; query API for ranges"
+    acceptance:
+      - "EXPLAIN QUERY PLAN shows index-only scans for hot windows"
+      - "Rollups reconcile with raw rows (checksum test)"
+
+  - id: p5.live-logs
+    title: "Live log ring buffer + SSE feed with filters"
+    owner: observability-engineer
+    status: pending
+    depends_on: [p5.trace-context]
+    deliverables:
+      - "In-memory ring + subscription hub; level/trace/provider filters"
+    acceptance:
+      - "Slow dashboard subscriber never backpressures the proxy (drops, notifies)"
+      - "Redaction applies at the logging layer, inherited by the feed"
+
+  - id: p5.pprof-audit
+    title: "Observability overhead audit (pprof): zero hot-path regressions"
+    owner: performance-engineer
+    status: pending
+    depends_on: [p5.metrics, p5.usage-events]
+    deliverables:
+      - "Benchmark report: overhead within noise (<1%)"
+    acceptance:
+      - "No measurable allocation increase on proxy path"
+
+  - id: p5.gate
+    title: "Phase 5 gate"
+    owner: graph-master
+    status: pending
+    depends_on: [p5.trace-context, p5.usage-events, p5.metrics, p5.rollups, p5.live-logs, p5.pprof-audit]
+    deliverables:
+      - "Gate report"
+    acceptance:
+      - "All gate criteria verified with evidence"

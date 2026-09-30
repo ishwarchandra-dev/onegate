@@ -1,0 +1,91 @@
+# OneGate task graph — Phase 7: Compatibility & Migration
+phase: 7
+name: compatibility
+title: "Phase 7 — OmniRoute v3.8.52 Parity & Migration"
+status: pending
+gate:
+  - "Parity checklist: 100% of blocker rows green, cosmetic rows triaged"
+  - "Traffic replay diff harness clean on captured corpus"
+  - "onegate import migrates a reference OmniRoute install (dry-run + apply)"
+  - "Parity report published with per-area sign-offs"
+
+nodes:
+  - id: p7.parity-checklist
+    title: "Full parity checklist from OmniRoute v3.8.52 source & traffic captures"
+    owner: compatibility-auditor
+    status: pending
+    depends_on: [p6.gate]
+    deliverables:
+      - "docs/compat/checklist.md: endpoints, headers, errors, events, config, CLI"
+    acceptance:
+      - "Every row has: legacy behavior, OneGate status, evidence link"
+
+  - id: p7.capture-corpus
+    title: "Captured traffic corpus (anonymized) for replay diffing"
+    owner: compatibility-auditor
+    status: pending
+    depends_on: [p7.parity-checklist]
+    deliverables:
+      - "Fixture corpus: requests/responses/SSE transcripts per protocol"
+    acceptance:
+      - "Corpus covers top-20 error cases and all stream event orders"
+
+  - id: p7.replay-harness
+    title: "Replay diff harness: corpus → OneGate vs OmniRoute, byte/event diff"
+    owner: qa-engineer
+    status: pending
+    depends_on: [p7.capture-corpus]
+    deliverables:
+      - "scripts/parity/replay.py + normalized diff reporter"
+    acceptance:
+      - "Zero unexplained diffs on corpus; diffs classified blocker/cosmetic"
+
+  - id: p7.parity-fixes
+    title: "Parity fix cycle: resolve blockers surfaced by the harness"
+    owner: go-engineer
+    status: pending
+    depends_on: [p7.replay-harness]
+    deliverables:
+      - "Fixes with regression tests per checklist row"
+    acceptance:
+      - "Each fix links the checklist row it closes"
+
+  - id: p7.config-import
+    title: "Import: omniroute.json → OneGate config + provider settings"
+    owner: migration-engineer
+    status: pending
+    depends_on: [p7.parity-checklist]
+    deliverables:
+      - "onegate import --dry-run/--apply with diff report"
+    acceptance:
+      - "Idempotent; legacy install untouched; unmapped fields reported"
+
+  - id: p7.data-import
+    title: "Import: virtual keys, routing rules, usage history"
+    owner: migration-engineer
+    status: pending
+    depends_on: [p7.config-import]
+    deliverables:
+      - "Key re-hash handling, rule translation, aggregate-preserving usage import"
+    acceptance:
+      - "Reference install imports 100% of mappable data with a skip report"
+
+  - id: p7.parity-report
+    title: "Parity report & sign-offs per area (proxy, routing, keys, config, CLI)"
+    owner: compatibility-auditor
+    status: pending
+    depends_on: [p7.parity-fixes, p7.data-import]
+    deliverables:
+      - "docs/compat/report-phase7.md"
+    acceptance:
+      - "Blocker count zero; cosmetic items have task nodes or waivers"
+
+  - id: p7.gate
+    title: "Phase 7 gate"
+    owner: graph-master
+    status: pending
+    depends_on: [p7.parity-checklist, p7.capture-corpus, p7.replay-harness, p7.parity-fixes, p7.config-import, p7.data-import, p7.parity-report]
+    deliverables:
+      - "Gate report"
+    acceptance:
+      - "All gate criteria verified"

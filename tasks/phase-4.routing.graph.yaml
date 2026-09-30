@@ -1,0 +1,116 @@
+# OneGate task graph — Phase 4: Routing Engine & Access Control
+phase: 4
+name: routing
+title: "Phase 4 — Routing Engine, Virtual Keys & Quotas"
+status: pending
+gate:
+  - "Routing decision is a pure function, fully table-tested"
+  - "Virtual keys enforce auth, model mapping, and quotas under -race"
+  - "Provider 429/retry-after integrates with fallback decisions"
+  - "Hot-reload of registry & rules without restart"
+
+nodes:
+  - id: p4.model-registry
+    title: "Model registry: canonical IDs, aliases, provider targets, capabilities"
+    owner: routing-specialist
+    status: pending
+    depends_on: [p3.gate]
+    deliverables:
+      - "internal/routing/registry.go + storage-backed persistence"
+    acceptance:
+      - "Decision function pure: (req, registry, health) → targets; table tests"
+      - "Capability flags (tools, vision, json) filter targets"
+
+  - id: p4.fallback-policies
+    title: "Fallback policies: ordered, weighted, cost-preferred, latency-preferred"
+    owner: routing-specialist
+    status: pending
+    depends_on: [p4.model-registry]
+    deliverables:
+      - "Policy implementations + per-key overrides"
+    acceptance:
+      - "OmniRoute v3.8.52 chain semantics encoded as tests"
+      - "Deterministic under seeding for weighted mode"
+
+  - id: p4.health-tracking
+    title: "Target health: failure cooldowns, circuit-open, slow-start recovery"
+    owner: routing-specialist
+    status: pending
+    depends_on: [p4.model-registry]
+    deliverables:
+      - "Health state machine + event log"
+    acceptance:
+      - "Consecutive-failure thresholds open circuit; half-open probes recover"
+      - "State changes observable via events"
+
+  - id: p4.virtual-keys
+    title: "Virtual keys: generate, hash (argon2id), verify, scope, revoke"
+    owner: security-engineer
+    status: pending
+    depends_on: [p3.gate]
+    deliverables:
+      - "internal/auth/vkeys + storage integration"
+    acceptance:
+      - "Constant-time verify; raw key returned exactly once at creation"
+      - "Scopes: allowed models, allowed providers, per-key routing overrides"
+
+  - id: p4.quotas
+    title: "Per-key quotas: rpm/tpm/concurrency limits + spend caps"
+    owner: rate-limit-specialist
+    status: pending
+    depends_on: [p4.virtual-keys]
+    deliverables:
+      - "internal/ratelimit: atomic buckets, budget debiter, 429 envelope"
+    acceptance:
+      - "-race clean under concurrent traffic; correct 429 with retry-after"
+      - "Budget debits exactly once per finalized usage event"
+
+  - id: p4.price-tables
+    title: "Model price tables & cost estimation"
+    owner: rate-limit-specialist
+    status: pending
+    depends_on: [p4.virtual-keys]
+    deliverables:
+      - "internal/ratelimit/pricing.go + maintained price data"
+    acceptance:
+      - "Per-model input/output/cache prices; estimates annotated, actuals debited"
+
+  - id: p4.provider-429
+    title: "Provider-side limit handling: retry-after, jittered backoff, fallback integration"
+    owner: rate-limit-specialist
+    status: pending
+    depends_on: [p4.fallback-policies]
+    deliverables:
+      - "429/limit parsing + backoff policy feeding fallback engine"
+    acceptance:
+      - "Honors retry-after; capped+jittered otherwise; respects total deadline"
+
+  - id: p4.hot-reload
+    title: "Registry/rules hot reload on storage changes"
+    owner: go-engineer
+    status: pending
+    depends_on: [p4.model-registry, p1.config-hotreload]
+    deliverables:
+      - "Watch pipeline: storage change → registry swap (atomic pointer)"
+    acceptance:
+      - "In-flight requests finish on old config; new requests see new config immediately"
+
+  - id: p4.integration
+    title: "Routing integration tests: key → route → fallback → quota end-to-end"
+    owner: qa-engineer
+    status: pending
+    depends_on: [p4.fallback-policies, p4.health-tracking, p4.quotas, p4.provider-429, p4.hot-reload]
+    deliverables:
+      - "Integration suite with mock providers in failure modes"
+    acceptance:
+      - "Matrix: healthy/degraded/rate-limited provider × key scopes × quotas"
+
+  - id: p4.gate
+    title: "Phase 4 gate"
+    owner: graph-master
+    status: pending
+    depends_on: [p4.model-registry, p4.fallback-policies, p4.health-tracking, p4.virtual-keys, p4.quotas, p4.price-tables, p4.provider-429, p4.hot-reload, p4.integration]
+    deliverables:
+      - "Gate report"
+    acceptance:
+      - "All gate criteria verified"

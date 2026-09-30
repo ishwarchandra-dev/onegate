@@ -1,0 +1,121 @@
+# OneGate task graph — Phase 6: Management API & Dashboard
+phase: 6
+name: dashboard
+title: "Phase 6 — Management API & Dashboard UI"
+status: pending
+gate:
+  - "OpenAPI spec is the contract; TS client generated from it"
+  - "Core views shipped: providers, models & routing, keys, usage, logs, settings"
+  - "Dashboard auth: login, sessions, CSRF; no secrets over the wire"
+  - "Both LTR and RTL layouts verified"
+
+nodes:
+  - id: p6.api-spec
+    title: "OpenAPI spec for management API (resources, pagination, error envelope)"
+    owner: api-designer
+    status: pending
+    depends_on: [p4.gate, p5.gate]
+    deliverables:
+      - "docs/api/openapi.yaml covering all dashboard resources"
+    acceptance:
+      - "Spec lints clean; every endpoint has auth class + rate-limit class"
+
+  - id: p6.api-impl
+    title: "Management API handlers + generated TS client"
+    owner: go-engineer
+    status: pending
+    depends_on: [p6.api-spec]
+    deliverables:
+      - "internal/api handlers; codegen script for web client"
+    acceptance:
+      - "Handler conformance tests run against the spec (contract testing)"
+
+  - id: p6.auth-sessions
+    title: "Dashboard auth: login, session cookies, CSRF, logout"
+    owner: security-engineer
+    status: pending
+    depends_on: [p6.api-impl]
+    deliverables:
+      - "Session store, cookie hardening, CSRF middleware"
+    acceptance:
+      - "First-run setup flow creates admin; sessions expire; CSRF blocked in tests"
+
+  - id: p6.design-system
+    title: "Dashboard design system: tokens, charts, empty/loading states"
+    owner: design-engineer
+    status: pending
+    depends_on: [p0.gate]
+    deliverables:
+      - "app.css token set, chart palette, skeleton components"
+    acceptance:
+      - "Dark/light parity; AA contrast; RTL-safe patterns documented"
+
+  - id: p6.view-providers
+    title: "Providers view: list, add/edit (masked keys), enable/disable, test connection"
+    owner: frontend-engineer
+    status: pending
+    depends_on: [p6.api-impl, p6.design-system]
+    deliverables:
+      - "Routes + components + optimistic updates"
+    acceptance:
+      - "Test connection surfaces per-protocol error detail"
+
+  - id: p6.view-routing
+    title: "Models & routing view: registry, fallback chains editor, health states"
+    owner: frontend-engineer
+    status: pending
+    depends_on: [p6.api-impl, p6.design-system]
+    deliverables:
+      - "Chain editor with drag ordering + validation"
+    acceptance:
+      - "Invalid chains rejected client and server side"
+
+  - id: p6.view-keys
+    title: "Virtual keys view: create (show-once), scopes, quotas, revoke"
+    owner: frontend-engineer
+    status: pending
+    depends_on: [p6.api-impl, p6.design-system]
+    deliverables:
+      - "Key management UI + usage summary per key"
+    acceptance:
+      - "Raw key displayed exactly once with copy + warning"
+
+  - id: p6.view-usage
+    title: "Usage analytics view: requests, tokens, cost, latency charts over time"
+    owner: frontend-engineer
+    status: pending
+    depends_on: [p6.api-impl, p5.rollups]
+    deliverables:
+      - "Time-range selectors, per-model/provider breakdowns, CSV export"
+    acceptance:
+      - "Charts stream from rollup API; empty and error states designed"
+
+  - id: p6.view-logs
+    title: "Live logs view: SSE stream with filters and trace details"
+    owner: frontend-engineer
+    status: pending
+    depends_on: [p6.api-impl, p5.live-logs]
+    deliverables:
+      - "Live tail + pause + filter; trace drill-down drawer"
+    acceptance:
+      - "Backpressure drops visible as a gap indicator, not a freeze"
+
+  - id: p6.e2e-dashboard
+    title: "Dashboard E2E suite (playwright) against seeded gateway"
+    owner: qa-engineer
+    status: pending
+    depends_on: [p6.view-providers, p6.view-routing, p6.view-keys, p6.view-usage, p6.view-logs, p6.auth-sessions]
+    deliverables:
+      - "E2E specs covering the primary user journeys"
+    acceptance:
+      - "Journeys green in CI; no route ships untested"
+
+  - id: p6.gate
+    title: "Phase 6 gate"
+    owner: graph-master
+    status: pending
+    depends_on: [p6.api-spec, p6.api-impl, p6.auth-sessions, p6.design-system, p6.view-providers, p6.view-routing, p6.view-keys, p6.view-usage, p6.view-logs, p6.e2e-dashboard]
+    deliverables:
+      - "Gate report"
+    acceptance:
+      - "All gate criteria verified"

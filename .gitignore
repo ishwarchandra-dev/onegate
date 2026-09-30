@@ -1,0 +1,23 @@
+# Go
+bin/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Node
+node_modules/
+web/build/
+web/.react-router/
+
+# OneGate runtime state
+.onegate/
+*.db
+*.db-shm
+*.db-wal
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
