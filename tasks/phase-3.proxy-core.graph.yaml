@@ -35,7 +35,7 @@ nodes:
   - id: p3.upstream-client
     title: "Provider HTTP client: connection pooling, per-provider base config, retry-safe transport"
     owner: go-engineer
-    status: pending
+    status: done
     depends_on: [p3.http-server]
     deliverables:
       - "internal/proxy/client: pooled transport, header building, auth injection"
