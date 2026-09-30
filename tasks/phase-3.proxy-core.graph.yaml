@@ -24,7 +24,7 @@ nodes:
   - id: p3.ingest-endpoints
     title: "Proxy endpoints: /v1/chat/completions, /v1/messages, gemini path"
     owner: go-engineer
-    status: pending
+    status: done
     depends_on: [p3.http-server, p2.canonical-schema]
     deliverables:
       - "Endpoint handlers: auth extraction, protocol detection, request ID assignment"

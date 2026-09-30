@@ -18,6 +18,8 @@
 // integer micro-units (1 micro = 1e-6 USD) — never floats.
 package domain
 
+import "errors"
+
 // ProviderProtocol identifies a provider's wire protocol.
 type ProviderProtocol string
 
@@ -133,6 +135,23 @@ type VirtualKey struct {
 func (k VirtualKey) ExpiredAt(nowMS int64) bool {
 	return k.ExpiresMS > 0 && nowMS >= k.ExpiresMS
 }
+
+// Virtual-key authentication sentinels. Shared by the verifier
+// (internal/auth, production) and the ingest endpoints
+// (internal/proxy/ingest, which map them onto 401/403 protocol
+// envelopes) so the two layers never import each other.
+var (
+	// ErrNoCredential: the request carried no key at all (401).
+	ErrNoCredential = errors.New("no credential provided")
+	// ErrMalformedKey: not a gateway key shape (401).
+	ErrMalformedKey = errors.New("malformed API key")
+	// ErrUnknownKey: well-formed but not issued by this gateway (401).
+	ErrUnknownKey = errors.New("invalid API key")
+	// ErrKeyRevoked: stored but revoked (403).
+	ErrKeyRevoked = errors.New("key revoked")
+	// ErrKeyExpired: stored but past expiry (403).
+	ErrKeyExpired = errors.New("key expired")
+)
 
 // FallbackPolicy selects how a routing rule orders its targets.
 type FallbackPolicy string

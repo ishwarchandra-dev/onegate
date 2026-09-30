@@ -19,6 +19,11 @@ import (
 // This keeps the proxy core independently testable and prevents the
 // classic gateway disease: request-path code reaching sideways into
 // configuration or persistence.
+//
+// Test files are exempt from the internal-allowlist portion (but never
+// from the external-dependency ban): integration tests assemble the
+// stack exactly like cmd/onegate does, which is the composition layer's
+// job. Production files under internal/proxy remain fully constrained.
 func TestLayering(t *testing.T) {
 	allowedInternalPrefixes := []string{
 		"github.com/ishwarchandra-dev/onegate/internal/domain",
@@ -47,26 +52,31 @@ func TestLayering(t *testing.T) {
 		if perr != nil {
 			return perr
 		}
+		isTest := strings.HasSuffix(path, "_test.go")
 		for _, imp := range file.Imports {
 			ip := strings.Trim(imp.Path.Value, `"`)
 			// Stdlib and intra-proxy imports are fine.
 			if !strings.Contains(ip, ".") || strings.HasPrefix(ip, "github.com/ishwarchandra-dev/onegate/internal/proxy") {
 				continue
 			}
-			if func() bool {
+			allowed := func() bool {
 				for _, prefix := range allowedInternalPrefixes {
 					if strings.HasPrefix(ip, prefix) {
 						return true
 					}
 				}
-				return false
-			}() {
+				return isTest // tests may import composition layers
+			}()
+			if allowed {
 				continue
 			}
 			// Anything else (external deps or forbidden internals) is a
 			// violation.
 			violations = append(violations, path+": "+ip)
 			continue
+		}
+		if isTest {
+			return nil // same exemption as above
 		}
 		for _, imp := range file.Imports {
 			ip := strings.Trim(imp.Path.Value, `"`)

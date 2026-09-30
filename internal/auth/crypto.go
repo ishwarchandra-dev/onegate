@@ -32,6 +32,10 @@ const (
 	// PurposeProviderKeys derives the key encrypting provider API keys.
 	PurposeProviderKeys Purpose = "onegate/provider-keys/v1"
 
+	// PurposeVirtualKeyHash derives the HMAC pepper for virtual-key
+	// hashes (keyhash.go).
+	PurposeVirtualKeyHash Purpose = "onegate/vkey-hash/v1"
+
 	// envelopeVersion is the current ciphertext envelope version byte.
 	envelopeVersion byte = 0x01
 )
@@ -144,4 +148,11 @@ func MaskKey(key string) string {
 		return strings.Repeat("*", len(key))
 	}
 	return key[:4] + "…" + key[len(key)-4:]
+}
+
+// Pepper derives the virtual-key hash pepper from the master secret.
+// Callers derive once at startup and hand the pepper to NewVerifier;
+// hashes in storage are only comparable under the same derivation.
+func Pepper(master []byte) ([]byte, error) {
+	return deriveKey(master, PurposeVirtualKeyHash)
 }
