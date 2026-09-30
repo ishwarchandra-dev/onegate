@@ -60,8 +60,8 @@ type ModelCapabilities struct {
 type ModelTarget struct {
 	ProviderID     string `json:"provider_id"`
 	ProviderModel  string `json:"provider_model"`
-	Weight         int    `json:"weight"`   // weighted policy: relative share
-	Position       int    `json:"position"` // ordered policy: lower first
+	Weight         int    `json:"weight"`                    // weighted policy: relative share
+	Position       int    `json:"position"`                  // ordered policy: lower first
 	CostMultiplier int    `json:"cost_multiplier,omitempty"` // percent, 100 = nominal
 }
 
@@ -108,9 +108,9 @@ type KeyScopes struct {
 
 // KeyLimits are the enforceable per-key quotas. Zero means unlimited.
 type KeyLimits struct {
-	RPM               int64 `json:"rpm,omitempty"`                 // requests per minute
-	TPM               int64 `json:"tpm,omitempty"`                 // tokens per minute
-	Concurrency       int   `json:"concurrency,omitempty"`         // parallel in-flight requests
+	RPM               int64 `json:"rpm,omitempty"`                  // requests per minute
+	TPM               int64 `json:"tpm,omitempty"`                  // tokens per minute
+	Concurrency       int   `json:"concurrency,omitempty"`          // parallel in-flight requests
 	MaxSpendUSDMicros int64 `json:"max_spend_usd_micros,omitempty"` // lifetime spend cap
 }
 

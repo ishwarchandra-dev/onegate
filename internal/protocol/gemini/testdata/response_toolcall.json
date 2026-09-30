@@ -1,0 +1,22 @@
+{
+  "responseId": "resp_002",
+  "modelVersion": "gemini-2.0-flash",
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [
+          {"text": "Let me check."},
+          {"functionCall": {"name": "get_weather", "args": {"city": "SF"}}}
+        ]
+      },
+      "finishReason": "STOP"
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 15,
+    "candidatesTokenCount": 9,
+    "totalTokenCount": 24,
+    "thoughtsTokenCount": 6
+  }
+}

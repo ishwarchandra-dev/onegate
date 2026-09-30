@@ -1,0 +1,16 @@
+{
+  "responseId": "resp_001",
+  "modelVersion": "gemini-2.0-flash",
+  "candidates": [
+    {
+      "content": {"role": "model", "parts": [{"text": "Hello! How can I help?"}]},
+      "finishReason": "STOP"
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 25,
+    "candidatesTokenCount": 7,
+    "totalTokenCount": 32,
+    "cachedContentTokenCount": 10
+  }
+}

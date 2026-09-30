@@ -1,0 +1,55 @@
+{
+  "model": "gpt-4o",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is the weather in SF? Use the tool."},
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_1",
+          "type": "function",
+          "function": {"name": "get_weather", "arguments": "{\"city\":\"SF\"}"}
+        }
+      ]
+    },
+    {"role": "tool", "tool_call_id": "call_1", "content": "Sunny, 18C"},
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "And this image?"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,aGVsbG8=", "detail": "high"}}
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the current weather for a city",
+        "parameters": {
+          "type": "object",
+          "properties": {"city": {"type": "string"}},
+          "required": ["city"]
+        }
+      }
+    }
+  ],
+  "tool_choice": {"type": "function", "function": {"name": "get_weather"}},
+  "stream": true,
+  "max_tokens": 1024,
+  "temperature": 0.2,
+  "top_p": 0.9,
+  "stop": ["END"],
+  "seed": 42,
+  "logit_bias": {"50256": -100},
+  "logprobs": true,
+  "top_logprobs": 5,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {"name": "weather_report", "schema": {"type": "object"}, "strict": true}
+  },
+  "user": "user-123"
+}

@@ -1,0 +1,6 @@
+data: {"responseId":"resp_t9","modelVersion":"gemini-2.0-flash","candidates":[{"content":{"role":"model","parts":[{"text":"Let me check."}]}}]}
+
+data: {"responseId":"resp_t9","modelVersion":"gemini-2.0-flash","candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"get_weather","args":{"city":"SF"}}}]}}]}
+
+data: {"responseId":"resp_t9","modelVersion":"gemini-2.0-flash","candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":15,"candidatesTokenCount":9,"totalTokenCount":24,"thoughtsTokenCount":6}}
+

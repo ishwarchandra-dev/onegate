@@ -1,0 +1,8 @@
+{
+  "model": "gpt-4o",
+  "messages": [
+    {"role": "user", "content": "Say hi."}
+  ],
+  "max_tokens": 64,
+  "temperature": 0
+}

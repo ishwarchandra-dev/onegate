@@ -1,0 +1,48 @@
+{
+  "model": "claude-sonnet-4-5",
+  "max_tokens": 1024,
+  "system": "You are a helpful assistant.",
+  "messages": [
+    {"role": "user", "content": "What is the weather in SF? Use the tool."},
+    {
+      "role": "assistant",
+      "content": [
+        {"type": "thinking", "thinking": "I should call the weather tool.", "signature": "sig_abc123"},
+        {"type": "text", "text": "Let me check."},
+        {"type": "tool_use", "id": "toolu_01A", "name": "get_weather", "input": {"city": "SF"}}
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {"type": "tool_result", "tool_use_id": "toolu_01A", "content": [{"type": "text", "text": "Sunny, 18C"}]},
+        {"type": "text", "text": "Summarize."}
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "aGVsbG8="}},
+        {"type": "text", "text": "And this?"}
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "Get the current weather",
+      "input_schema": {
+        "type": "object",
+        "properties": {"city": {"type": "string"}},
+        "required": ["city"]
+      }
+    }
+  ],
+  "tool_choice": {"type": "auto"},
+  "temperature": 0.2,
+  "top_p": 0.9,
+  "top_k": 64,
+  "stop_sequences": ["END"],
+  "stream": true,
+  "metadata": {"user_id": "user-123"}
+}

@@ -1,0 +1,52 @@
+{
+  "systemInstruction": {"parts": [{"text": "You are a helpful assistant."}]},
+  "contents": [
+    {"role": "user", "parts": [{"text": "What is the weather in SF?"}]},
+    {
+      "role": "model",
+      "parts": [
+        {"thought": true, "text": "I should check the weather.", "thoughtSignature": "sig_1"},
+        {"text": "Let me check."},
+        {"functionCall": {"name": "get_weather", "args": {"city": "SF"}}}
+      ]
+    },
+    {
+      "role": "user",
+      "parts": [
+        {"functionResponse": {"name": "get_weather", "response": {"result": "Sunny, 18C"}}}
+      ]
+    },
+    {
+      "role": "user",
+      "parts": [
+        {"inlineData": {"mimeType": "image/png", "data": "aGVsbG8="}},
+        {"text": "And this?"}
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "functionDeclarations": [
+        {
+          "name": "get_weather",
+          "description": "Get the current weather",
+          "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"]
+          }
+        }
+      ]
+    }
+  ],
+  "toolConfig": {"functionCallingConfig": {"mode": "ANY", "allowedFunctionNames": ["get_weather"]}},
+  "generationConfig": {
+    "maxOutputTokens": 1024,
+    "temperature": 0.2,
+    "topP": 0.9,
+    "topK": 64,
+    "stopSequences": ["END"],
+    "seed": 42,
+    "responseMimeType": "application/json"
+  }
+}

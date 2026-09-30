@@ -43,9 +43,9 @@ type ReloadConfig struct {
 // Default returns the built-in defaults used when no configuration is given.
 func Default() Config {
 	return Config{
-		Host:    "127.0.0.1",
-		Port:    7420,
-		DataDir: ".onegate",
+		Host:     "127.0.0.1",
+		Port:     7420,
+		DataDir:  ".onegate",
 		LogLevel: "info",
 		Reload: ReloadConfig{
 			Enabled: true,

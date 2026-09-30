@@ -1,0 +1,26 @@
+{
+  "id": "chatcmpl-tool456",
+  "object": "chat.completion",
+  "created": 1770000042,
+  "model": "gpt-4o-2024-08-06",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\":\"SF\"}"}},
+          {"id": "call_2", "type": "function", "function": {"name": "get_time", "arguments": "{\"tz\":\"PST\"}"}}
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 40,
+    "completion_tokens": 18,
+    "total_tokens": 58,
+    "completion_tokens_details": {"reasoning_tokens": 6}
+  }
+}

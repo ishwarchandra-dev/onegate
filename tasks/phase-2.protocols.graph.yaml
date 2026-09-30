@@ -2,7 +2,7 @@
 phase: 2
 name: protocols
 title: "Phase 2 — Protocol Adapters & Canonical Types"
-status: pending
+status: done
 gate:
   - "OpenAI, Anthropic, Gemini adapters round-trip golden fixtures"
   - "Streaming translation per protocol verified event-by-event"
@@ -12,7 +12,7 @@ nodes:
   - id: p2.canonical-schema
     title: "Canonical request/response/event schema (superset of all protocols)"
     owner: protocol-engineer
-    status: pending
+    status: done
     depends_on: [p1.gate]
     deliverables:
       - "internal/domain/protocol.go: messages, tools, content blocks, usage, stream events"
@@ -24,7 +24,7 @@ nodes:
   - id: p2.openai-adapter
     title: "OpenAI protocol adapter (chat + streaming + errors)"
     owner: protocol-engineer
-    status: pending
+    status: done
     depends_on: [p2.canonical-schema]
     deliverables:
       - "internal/protocol/openai: request/response types, SSE translation"
@@ -36,7 +36,7 @@ nodes:
   - id: p2.anthropic-adapter
     title: "Anthropic Messages adapter (messages + streaming + errors)"
     owner: protocol-engineer
-    status: pending
+    status: done
     depends_on: [p2.canonical-schema]
     deliverables:
       - "internal/protocol/anthropic incl. system prompts, content blocks, SSE event order"
@@ -47,7 +47,7 @@ nodes:
   - id: p2.gemini-adapter
     title: "Google Gemini adapter (generateContent + streamGenerateContent)"
     owner: protocol-engineer
-    status: pending
+    status: done
     depends_on: [p2.canonical-schema]
     deliverables:
       - "internal/protocol/gemini incl. function calls, safety blocks, alt=SSE streaming"
@@ -58,7 +58,7 @@ nodes:
   - id: p2.openai-compat
     title: "OpenAI-compatible provider profile (base-URL + auth templating)"
     owner: protocol-engineer
-    status: pending
+    status: done
     depends_on: [p2.openai-adapter]
     deliverables:
       - "Configurable endpoint/auth/header profile for OpenRouter, Groq, Mistral, vLLM, Ollama"
@@ -68,7 +68,7 @@ nodes:
   - id: p2.cross-protocol-tests
     title: "Cross-protocol translation conformance suite"
     owner: qa-engineer
-    status: pending
+    status: done
     depends_on: [p2.openai-adapter, p2.anthropic-adapter, p2.gemini-adapter]
     deliverables:
       - "Shared fixture set run through every adapter pair"
@@ -79,7 +79,7 @@ nodes:
   - id: p2.protocol-docs
     title: "Protocol notes: per-provider quirks with citations"
     owner: research-analyst
-    status: pending
+    status: done
     depends_on: [p2.openai-adapter, p2.anthropic-adapter, p2.gemini-adapter]
     deliverables:
       - "docs/research/provider-quirks.md (claim + citation + confidence)"
@@ -89,7 +89,7 @@ nodes:
   - id: p2.gate
     title: "Phase 2 gate"
     owner: graph-master
-    status: pending
+    status: done
     depends_on: [p2.canonical-schema, p2.openai-adapter, p2.anthropic-adapter, p2.gemini-adapter, p2.openai-compat, p2.cross-protocol-tests, p2.protocol-docs]
     deliverables:
       - "Gate report"
