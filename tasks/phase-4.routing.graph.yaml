@@ -68,7 +68,7 @@ nodes:
   - id: p4.price-tables
     title: "Model price tables & cost estimation"
     owner: rate-limit-specialist
-    status: pending
+    status: done
     depends_on: [p4.virtual-keys]
     deliverables:
       - "internal/ratelimit/pricing.go + maintained price data"
