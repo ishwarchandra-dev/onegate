@@ -179,10 +179,18 @@ func (r *ModelRepo) Upsert(m domain.Model) error {
 		if t.CostMultiplier == 0 {
 			t.CostMultiplier = 100
 		}
+		capsJSON := "{}"
+		if t.Capabilities != nil {
+			b, err := json.Marshal(t.Capabilities)
+			if err != nil {
+				return fmt.Errorf("storage: marshal target capabilities: %w", err)
+			}
+			capsJSON = string(b)
+		}
 		if _, err := tx.Exec(`INSERT INTO model_targets
-                        (model_id, provider_id, provider_model, weight, position, cost_multiplier)
-                        VALUES (?, ?, ?, ?, ?, ?)`,
-			m.ID, t.ProviderID, t.ProviderModel, t.Weight, pos, t.CostMultiplier); err != nil {
+                        (model_id, provider_id, provider_model, weight, position, cost_multiplier, caps_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			m.ID, t.ProviderID, t.ProviderModel, t.Weight, pos, t.CostMultiplier, capsJSON); err != nil {
 			return fmt.Errorf("storage: insert model target: %w", err)
 		}
 	}
@@ -207,8 +215,41 @@ func (r *ModelRepo) Get(id string) (domain.Model, error) {
 	return m, nil
 }
 
+func (r *ModelRepo) List() ([]domain.Model, error) {
+	rows, err := r.s.db.Query(`SELECT id, aliases_json, caps_json, created_ms, updated_ms
+                FROM models ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list models: %w", err)
+	}
+	var out []domain.Model
+	for rows.Next() {
+		m, err := scanModel(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	for i := range out {
+		targets, err := r.targets(out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Targets = targets
+	}
+	return out, nil
+}
+
 func (r *ModelRepo) targets(modelID string) ([]domain.ModelTarget, error) {
-	rows, err := r.s.db.Query(`SELECT provider_id, provider_model, weight, position, cost_multiplier
+	rows, err := r.s.db.Query(`SELECT provider_id, provider_model, weight, position, cost_multiplier, caps_json
                 FROM model_targets WHERE model_id = ? ORDER BY position, provider_id`, modelID)
 	if err != nil {
 		return nil, fmt.Errorf("storage: list model targets: %w", err)
@@ -217,8 +258,15 @@ func (r *ModelRepo) targets(modelID string) ([]domain.ModelTarget, error) {
 	var out []domain.ModelTarget
 	for rows.Next() {
 		var t domain.ModelTarget
-		if err := rows.Scan(&t.ProviderID, &t.ProviderModel, &t.Weight, &t.Position, &t.CostMultiplier); err != nil {
+		var capsJSON string
+		if err := rows.Scan(&t.ProviderID, &t.ProviderModel, &t.Weight, &t.Position, &t.CostMultiplier, &capsJSON); err != nil {
 			return nil, fmt.Errorf("storage: scan model target: %w", err)
+		}
+		if capsJSON != "" && capsJSON != "{}" {
+			var caps domain.ModelCapabilities
+			if err := json.Unmarshal([]byte(capsJSON), &caps); err == nil {
+				t.Capabilities = &caps
+			}
 		}
 		out = append(out, t)
 	}
@@ -248,6 +296,94 @@ func (r *ModelRepo) Delete(id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// RoutingRuleRepo
+// ---------------------------------------------------------------------------
+
+// RoutingRuleRepo persists fallback routing rules for models.
+type RoutingRuleRepo struct{ s *Store }
+
+func (s *Store) RoutingRules() *RoutingRuleRepo { return &RoutingRuleRepo{s} }
+
+// Upsert inserts or updates a routing rule.
+func (r *RoutingRuleRepo) Upsert(rule *domain.RoutingRule) error {
+	if rule.ID == "" {
+		rule.ID = newID("rule")
+	}
+	if rule.Policy == "" {
+		rule.Policy = domain.PolicyOrdered
+	}
+	_, err := r.s.db.Exec(`INSERT INTO routing_rules
+                (id, model_id, policy, enabled, position)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                        model_id = excluded.model_id,
+                        policy = excluded.policy,
+                        enabled = excluded.enabled,
+                        position = excluded.position`,
+		rule.ID, rule.ModelID, string(rule.Policy), boolToInt(rule.Enabled), rule.Position)
+	if err != nil {
+		return fmt.Errorf("storage: upsert routing rule: %w", err)
+	}
+	return nil
+}
+
+func (r *RoutingRuleRepo) Get(id string) (domain.RoutingRule, error) {
+	row := r.s.db.QueryRow(`SELECT id, model_id, policy, enabled, position
+                FROM routing_rules WHERE id = ?`, id)
+	return scanRoutingRule(row)
+}
+
+func (r *RoutingRuleRepo) GetByModel(modelID string) (domain.RoutingRule, error) {
+	row := r.s.db.QueryRow(`SELECT id, model_id, policy, enabled, position
+                FROM routing_rules WHERE model_id = ? ORDER BY position LIMIT 1`, modelID)
+	return scanRoutingRule(row)
+}
+
+func (r *RoutingRuleRepo) List() ([]domain.RoutingRule, error) {
+	rows, err := r.s.db.Query(`SELECT id, model_id, policy, enabled, position
+                FROM routing_rules ORDER BY position, id`)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list routing rules: %w", err)
+	}
+	defer rows.Close()
+	var out []domain.RoutingRule
+	for rows.Next() {
+		rule, err := scanRoutingRule(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rule)
+	}
+	return out, rows.Err()
+}
+
+func (r *RoutingRuleRepo) Delete(id string) error {
+	res, err := r.s.db.Exec(`DELETE FROM routing_rules WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("storage: delete routing rule: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func scanRoutingRule(row rowScanner) (domain.RoutingRule, error) {
+	var rule domain.RoutingRule
+	var policy string
+	var enabled int
+	if err := row.Scan(&rule.ID, &rule.ModelID, &policy, &enabled, &rule.Position); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return rule, ErrNotFound
+		}
+		return rule, fmt.Errorf("storage: scan routing rule: %w", err)
+	}
+	rule.Policy = domain.FallbackPolicy(policy)
+	rule.Enabled = enabled != 0
+	return rule, nil
 }
 
 // ---------------------------------------------------------------------------

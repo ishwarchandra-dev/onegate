@@ -60,11 +60,12 @@ type ModelCapabilities struct {
 // ProviderModel may differ from the canonical ID (e.g. canonical
 // "claude-sonnet" -> provider model "claude-3-5-sonnet-latest").
 type ModelTarget struct {
-	ProviderID     string `json:"provider_id"`
-	ProviderModel  string `json:"provider_model"`
-	Weight         int    `json:"weight"`                    // weighted policy: relative share
-	Position       int    `json:"position"`                  // ordered policy: lower first
-	CostMultiplier int    `json:"cost_multiplier,omitempty"` // percent, 100 = nominal
+	ProviderID     string             `json:"provider_id"`
+	ProviderModel  string             `json:"provider_model"`
+	Weight         int                `json:"weight"`                    // weighted policy: relative share
+	Position       int                `json:"position"`                  // ordered policy: lower first
+	CostMultiplier int                `json:"cost_multiplier,omitempty"` // percent, 100 = nominal
+	Capabilities   *ModelCapabilities `json:"capabilities,omitempty"`
 }
 
 // Model is a canonical model identity exposed to clients.

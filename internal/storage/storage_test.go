@@ -312,3 +312,104 @@ func TestRequestFilterByVKey(t *testing.T) {
 		}
 	}
 }
+
+func TestModelListAndTargetCaps(t *testing.T) {
+	s := openMigrated(t)
+	prov := ProviderRecord{
+		Provider: domain.Provider{
+			ID:       "prov-1",
+			Name:     "OpenAI",
+			Protocol: domain.ProtocolOpenAI,
+			Enabled:  true,
+		},
+	}
+	if err := s.Providers().Upsert(&prov); err != nil {
+		t.Fatalf("upsert provider: %v", err)
+	}
+
+	mrepo := s.Models()
+	m1 := domain.Model{
+		ID:           "model-a",
+		Capabilities: domain.ModelCapabilities{Tools: true},
+		Targets: []domain.ModelTarget{
+			{
+				ProviderID:    "prov-1",
+				ProviderModel: "m-a-t1",
+				Position:      0,
+				Weight:        1,
+				Capabilities:  &domain.ModelCapabilities{Tools: true, Vision: true},
+			},
+		},
+	}
+	m2 := domain.Model{
+		ID:           "model-b",
+		Capabilities: domain.ModelCapabilities{Stream: true},
+	}
+	if err := mrepo.Upsert(m1); err != nil {
+		t.Fatalf("upsert m1: %v", err)
+	}
+	if err := mrepo.Upsert(m2); err != nil {
+		t.Fatalf("upsert m2: %v", err)
+	}
+
+	list, err := mrepo.List()
+	if err != nil {
+		t.Fatalf("list models: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("want 2 models, got %d", len(list))
+	}
+	if list[0].ID != "model-a" || list[1].ID != "model-b" {
+		t.Fatalf("models out of order: %+v", list)
+	}
+	if len(list[0].Targets) != 1 || list[0].Targets[0].Capabilities == nil || !list[0].Targets[0].Capabilities.Vision {
+		t.Fatalf("target capabilities not preserved: %+v", list[0].Targets)
+	}
+}
+
+func TestRoutingRulesCRUD(t *testing.T) {
+	s := openMigrated(t)
+	rules := s.RoutingRules()
+
+	rule := domain.RoutingRule{
+		ID:       "rule-1",
+		ModelID:  "gpt-4o",
+		Policy:   domain.PolicyCost,
+		Enabled:  true,
+		Position: 1,
+	}
+	if err := rules.Upsert(&rule); err != nil {
+		t.Fatalf("upsert rule: %v", err)
+	}
+
+	got, err := rules.Get("rule-1")
+	if err != nil {
+		t.Fatalf("get rule: %v", err)
+	}
+	if got.ModelID != "gpt-4o" || got.Policy != domain.PolicyCost || !got.Enabled {
+		t.Fatalf("unexpected rule: %+v", got)
+	}
+
+	byModel, err := rules.GetByModel("gpt-4o")
+	if err != nil {
+		t.Fatalf("get by model: %v", err)
+	}
+	if byModel.ID != "rule-1" {
+		t.Fatalf("unexpected id from get by model: %s", byModel.ID)
+	}
+
+	list, err := rules.List()
+	if err != nil {
+		t.Fatalf("list rules: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != "rule-1" {
+		t.Fatalf("unexpected list: %+v", list)
+	}
+
+	if err := rules.Delete("rule-1"); err != nil {
+		t.Fatalf("delete rule: %v", err)
+	}
+	if _, err := rules.Get("rule-1"); err != ErrNotFound {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}

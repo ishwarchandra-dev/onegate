@@ -2,7 +2,7 @@
 phase: 4
 name: routing
 title: "Phase 4 — Routing Engine, Virtual Keys & Quotas"
-status: pending
+status: in-progress
 gate:
   - "Routing decision is a pure function, fully table-tested"
   - "Virtual keys enforce auth, model mapping, and quotas under -race"
@@ -13,7 +13,7 @@ nodes:
   - id: p4.model-registry
     title: "Model registry: canonical IDs, aliases, provider targets, capabilities"
     owner: routing-specialist
-    status: pending
+    status: done
     depends_on: [p3.gate]
     deliverables:
       - "internal/routing/registry.go + storage-backed persistence"

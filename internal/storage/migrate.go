@@ -103,6 +103,12 @@ var migrations = []migration{
 			)`,
 		},
 	},
+	{
+		version: 2,
+		stmts: []string{
+			`ALTER TABLE model_targets ADD COLUMN caps_json TEXT NOT NULL DEFAULT '{}'`,
+		},
+	},
 }
 
 // CurrentVersion is the schema version this binary understands.
