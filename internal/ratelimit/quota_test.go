@@ -237,9 +237,6 @@ func TestQuotaManager_ConcurrencyAndRaces(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(workers)
 
-	var successfulRequests sync.WaitGroup
-	var completedDebits sync.WaitGroup
-
 	for i := 0; i < workers; i++ {
 		go func(id int) {
 			defer wg.Done()
@@ -260,8 +257,6 @@ func TestQuotaManager_ConcurrencyAndRaces(t *testing.T) {
 	}
 
 	wg.Wait()
-	_ = successfulRequests
-	_ = completedDebits
 
 	inFlight, spend := qm.GetStats(key.ID)
 	if inFlight != 0 {
