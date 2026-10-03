@@ -12,7 +12,6 @@ package routing
 import (
 	"errors"
 	"fmt"
-	"math/rand"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -96,6 +95,9 @@ type RouteRequest struct {
 
 	// Seed is an optional seed for deterministic weighted target selection.
 	Seed int64
+
+	// Latency is an optional latency view used for PolicyLatency ordering.
+	Latency LatencyView
 }
 
 // RequestCapabilities inspects a canonical domain.Request to detect required capabilities.
@@ -530,74 +532,8 @@ func DecideTargets(req RouteRequest, reg *Snapshot, health HealthView) ([]Target
 		}
 	}
 
-	// Determine applicable fallback policy
-	policy := domain.PolicyOrdered
-	if req.PolicyOverride != "" {
-		policy = req.PolicyOverride
-	} else if rule, ok := reg.Rules[model.ID]; ok && rule.Enabled {
-		policy = rule.Policy
-	}
-
-	orderTargets(candidates, policy, req.Seed)
+	// Determine applicable fallback policy using precedence hierarchy
+	policy := ResolvePolicy(req, model.ID, reg)
+	OrderTargets(candidates, policy, req.Seed, req.Latency)
 	return candidates, nil
-}
-
-// orderTargets orders targets in place based on policy.
-func orderTargets(targets []Target, policy domain.FallbackPolicy, seed int64) {
-	switch policy {
-	case domain.PolicyCost:
-		sort.SliceStable(targets, func(i, j int) bool {
-			if targets[i].CostMultiplier != targets[j].CostMultiplier {
-				return targets[i].CostMultiplier < targets[j].CostMultiplier
-			}
-			if targets[i].Position != targets[j].Position {
-				return targets[i].Position < targets[j].Position
-			}
-			return targets[i].ProviderID < targets[j].ProviderID
-		})
-	case domain.PolicyWeighted:
-		if len(targets) <= 1 {
-			return
-		}
-		// Deterministic weighted selection using seed
-		r := rand.New(rand.NewSource(seed))
-		// Weighted shuffle: pick successive items according to their relative weights
-		remaining := make([]Target, len(targets))
-		copy(remaining, targets)
-		ordered := make([]Target, 0, len(targets))
-
-		for len(remaining) > 0 {
-			totalWeight := 0
-			for _, t := range remaining {
-				totalWeight += t.Weight
-			}
-			if totalWeight <= 0 {
-				ordered = append(ordered, remaining...)
-				break
-			}
-			pick := r.Intn(totalWeight)
-			acc := 0
-			chosenIdx := 0
-			for idx, t := range remaining {
-				acc += t.Weight
-				if pick < acc {
-					chosenIdx = idx
-					break
-				}
-			}
-			ordered = append(ordered, remaining[chosenIdx])
-			remaining = append(remaining[:chosenIdx], remaining[chosenIdx+1:]...)
-		}
-		copy(targets, ordered)
-	case domain.PolicyOrdered, domain.PolicyLatency:
-		fallthrough
-	default:
-		// PolicyOrdered: sort by Position ascending, then ProviderID
-		sort.SliceStable(targets, func(i, j int) bool {
-			if targets[i].Position != targets[j].Position {
-				return targets[i].Position < targets[j].Position
-			}
-			return targets[i].ProviderID < targets[j].ProviderID
-		})
-	}
 }

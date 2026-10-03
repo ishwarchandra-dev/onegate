@@ -24,7 +24,7 @@ nodes:
   - id: p4.fallback-policies
     title: "Fallback policies: ordered, weighted, cost-preferred, latency-preferred"
     owner: routing-specialist
-    status: pending
+    status: done
     depends_on: [p4.model-registry]
     deliverables:
       - "Policy implementations + per-key overrides"

@@ -105,8 +105,10 @@ const (
 // KeyScopes constrains what a virtual key may access. Empty lists mean
 // "allow all" (subject to the model existing).
 type KeyScopes struct {
-	AllowedModels    []string `json:"allowed_models,omitempty"`
-	AllowedProviders []string `json:"allowed_providers,omitempty"`
+	AllowedModels    []string                  `json:"allowed_models,omitempty"`
+	AllowedProviders []string                  `json:"allowed_providers,omitempty"`
+	PolicyOverride   FallbackPolicy            `json:"policy_override,omitempty"`
+	ModelOverrides   map[string]FallbackPolicy `json:"model_overrides,omitempty"`
 }
 
 // KeyLimits are the enforceable per-key quotas. Zero means unlimited.
