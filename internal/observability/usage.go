@@ -183,7 +183,7 @@ func (p *UsagePipeline) Enqueue(rec domain.RequestRecord) bool {
 		return true
 	default:
 		dropped := p.dropped.Add(1)
-		if p.logger != nil {
+		if p.logger != nil && (dropped == 1 || dropped%1000 == 0) {
 			p.logger.Warn("usage pipeline: queue full, event dropped",
 				slog.String("trace_id", rec.TraceID),
 				slog.String("vkey_id", rec.VirtualKeyID),

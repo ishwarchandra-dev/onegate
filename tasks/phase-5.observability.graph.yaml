@@ -67,7 +67,7 @@ nodes:
   - id: p5.pprof-audit
     title: "Observability overhead audit (pprof): zero hot-path regressions"
     owner: performance-engineer
-    status: pending
+    status: done
     depends_on: [p5.metrics, p5.usage-events]
     deliverables:
       - "Benchmark report: overhead within noise (<1%)"

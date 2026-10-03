@@ -180,11 +180,11 @@ func (reg *Registry) ObserveProxyRequest(protocol, provider, model, status strin
 	}
 
 	// Counter: onereq_total
-	countKey := fmt.Sprintf("%s|%s|%s|%s", protocol, provider, model, status)
+	countKey := protocol + "|" + provider + "|" + model + "|" + status
 	reg.getOrInitCounter(&reg.onereqTotal, countKey).Add(1)
 
 	// Histogram: onereq_latency_seconds
-	latKey := fmt.Sprintf("%s|%s|%s", provider, model, status)
+	latKey := provider + "|" + model + "|" + status
 	hist := reg.getOrInitHistogram(&reg.onereqLatency, latKey, reg.latencyBuckets)
 	hist.Observe(duration.Seconds())
 }
@@ -197,7 +197,7 @@ func (reg *Registry) ObserveTTFT(provider, model string, ttft time.Duration) {
 	if model == "" {
 		model = "unknown"
 	}
-	key := fmt.Sprintf("%s|%s", provider, model)
+	key := provider + "|" + model
 	hist := reg.getOrInitHistogram(&reg.onereqTTFT, key, reg.ttftBuckets)
 	hist.Observe(ttft.Seconds())
 }
