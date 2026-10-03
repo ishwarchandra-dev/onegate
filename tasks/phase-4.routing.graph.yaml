@@ -57,7 +57,7 @@ nodes:
   - id: p4.quotas
     title: "Per-key quotas: rpm/tpm/concurrency limits + spend caps"
     owner: rate-limit-specialist
-    status: pending
+    status: done
     depends_on: [p4.virtual-keys]
     deliverables:
       - "internal/ratelimit: atomic buckets, budget debiter, 429 envelope"
