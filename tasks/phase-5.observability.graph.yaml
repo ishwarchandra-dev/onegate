@@ -2,7 +2,7 @@
 phase: 5
 name: observability
 title: "Phase 5 — Observability & Usage Analytics"
-status: in-progress
+status: done
 gate:
   - "Every request emits: trace ID, per-attempt logs, final usage event"
   - "Metrics: counters + TTFT/latency histograms per provider/model/outcome"
@@ -77,7 +77,7 @@ nodes:
   - id: p5.gate
     title: "Phase 5 gate"
     owner: graph-master
-    status: pending
+    status: done
     depends_on: [p5.trace-context, p5.usage-events, p5.metrics, p5.rollups, p5.live-logs, p5.pprof-audit]
     deliverables:
       - "Gate report"
