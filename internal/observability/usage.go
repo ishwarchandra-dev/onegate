@@ -36,6 +36,7 @@ type CostCalculator interface {
 // before enrichment into a domain.RequestRecord.
 type Event struct {
 	CallID           string
+	Protocol         string
 	VirtualKeyID     string
 	ModelRequested   string
 	ModelServed      string

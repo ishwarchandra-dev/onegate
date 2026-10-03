@@ -68,6 +68,7 @@ type Trace struct {
 // billing and analytics (Phase 5 integration).
 type UsageEvent struct {
 	CallID         string
+	Protocol       domain.ProviderProtocol
 	VirtualKeyID   string
 	ModelRequested string
 	ModelServed    string
@@ -87,6 +88,7 @@ type UsageEvent struct {
 func (u UsageEvent) ToObservabilityEvent() observability.Event {
 	return observability.Event{
 		CallID:           u.CallID,
+		Protocol:         string(u.Protocol),
 		VirtualKeyID:     u.VirtualKeyID,
 		ModelRequested:   u.ModelRequested,
 		ModelServed:      u.ModelServed,
@@ -158,6 +160,7 @@ func (e *Engine) Execute(ctx context.Context, w http.ResponseWriter, call ingest
 
 	usageEv := UsageEvent{
 		CallID:         callID,
+		Protocol:       call.Protocol,
 		VirtualKeyID:   call.Key.ID,
 		ModelRequested: call.Request.Model,
 		Stream:         call.Stream,

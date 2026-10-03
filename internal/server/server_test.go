@@ -580,3 +580,44 @@ func itoa(n int) string {
 	}
 	return string(b[i:])
 }
+
+func TestRouter_FullPrometheusRegistryGating(t *testing.T) {
+	promReg := observability.NewRegistry(observability.MetricsConfig{
+		AdminToken: "admin-metrics-token",
+	})
+
+	r := New(Options{
+		Logger:  slog.New(slog.DiscardHandler),
+		Metrics: promReg,
+	})
+
+	srv := httptest.NewServer(r.Handler())
+	defer srv.Close()
+
+	// 1. Unauthenticated request to /metrics -> 401
+	resp, err := http.Get(srv.URL + "/metrics")
+	if err != nil {
+		t.Fatalf("GET /metrics: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d", resp.StatusCode)
+	}
+
+	// 2. Authenticated request with Bearer token -> 200 OK
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/metrics", nil)
+	req.Header.Set("Authorization", "Bearer admin-metrics-token")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("auth GET /metrics: %v", err)
+	}
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+	body := string(bodyBytes)
+	if !strings.Contains(body, "onegate_http_requests_total") {
+		t.Fatalf("expected onegate_http_requests_total in metrics output, got:\n%s", body)
+	}
+}

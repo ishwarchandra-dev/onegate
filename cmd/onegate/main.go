@@ -135,6 +135,11 @@ func run() error {
 	usagePipeline.Start(ctx)
 	defer usagePipeline.Stop()
 
+	// --- metrics: Prometheus registry (p5.metrics, admin-gated) -------
+	metricsRegistry := observability.NewRegistry(observability.MetricsConfig{
+		AdminToken: os.Getenv("ONEGATE_ADMIN_TOKEN"),
+	})
+
 	// --- proxy: upstream client + fallback engine ---------------------
 	upstreamClient := client.New(client.TransportConfig{}, nil)
 	defer upstreamClient.CloseIdleConnections()
@@ -147,6 +152,17 @@ func run() error {
 		Logger: logger,
 		OnUsage: func(ue fallback.UsageEvent) {
 			usagePipeline.EnqueueEvent(ue.ToObservabilityEvent())
+			metricsRegistry.ObserveProxyRequest(
+				string(ue.Protocol),
+				ue.ProviderID,
+				ue.ModelServed,
+				string(ue.Status),
+				ue.Duration,
+			)
+			if ue.Stream && ue.TTFT > 0 {
+				metricsRegistry.ObserveTTFT(ue.ProviderID, ue.ModelServed, ue.TTFT)
+			}
+			metricsRegistry.SetUsagePipelineStats(usagePipeline.Stats())
 		},
 	})
 
@@ -156,7 +172,8 @@ func run() error {
 	// endpoints authenticate and decode onto the mux, forwarding
 	// execution to the fallback engine.
 	router := server.New(server.Options{
-		Logger: logger,
+		Logger:  logger,
+		Metrics: metricsRegistry,
 		Timeouts: server.Timeouts{
 			ReadHeader: time.Duration(cfg.HTTP.ReadHeaderTimeoutMS) * time.Millisecond,
 			Read:       time.Duration(cfg.HTTP.ReadTimeoutMS) * time.Millisecond,

@@ -34,7 +34,7 @@ nodes:
   - id: p5.metrics
     title: "Prometheus metrics registry and /metrics endpoint (admin-gated)"
     owner: observability-engineer
-    status: pending
+    status: done
     depends_on: [p5.trace-context]
     deliverables:
       - "onereq_total, ttft/latency histograms, inflight gauge, quota rejections"
