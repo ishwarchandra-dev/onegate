@@ -35,7 +35,7 @@ nodes:
   - id: p4.health-tracking
     title: "Target health: failure cooldowns, circuit-open, slow-start recovery"
     owner: routing-specialist
-    status: pending
+    status: done
     depends_on: [p4.model-registry]
     deliverables:
       - "Health state machine + event log"
