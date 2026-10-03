@@ -2,7 +2,7 @@
 phase: 5
 name: observability
 title: "Phase 5 — Observability & Usage Analytics"
-status: pending
+status: in-progress
 gate:
   - "Every request emits: trace ID, per-attempt logs, final usage event"
   - "Metrics: counters + TTFT/latency histograms per provider/model/outcome"
@@ -13,7 +13,7 @@ nodes:
   - id: p5.trace-context
     title: "Trace ID propagation through server → routing → attempts → response"
     owner: observability-engineer
-    status: pending
+    status: done
     depends_on: [p3.gate]
     deliverables:
       - "Context keys, header echo (x-request-id), log field injection"

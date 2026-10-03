@@ -11,7 +11,7 @@ import (
 // HeaderRequestID is the request/response header carrying the trace ID.
 // OmniRoute v3.8.52 used x-request-id (lowercase on the wire); Go
 // canonicalizes to X-Request-Id, which is byte-identical over HTTP/1.1.
-const HeaderRequestID = "X-Request-Id"
+const HeaderRequestID = observability.HeaderTraceID
 
 // requestIDPrefix namespaces gateway-generated IDs so they are visibly
 // distinct from client-supplied ones in logs.

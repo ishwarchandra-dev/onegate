@@ -63,7 +63,45 @@ func redactAttrs(groups []string, a slog.Attr) slog.Attr {
 	return a
 }
 
-// NewLogger builds the process logger. level: debug|info|warn|error.
+// HeaderTraceID is the canonical HTTP header for request correlation ("X-Request-Id").
+const HeaderTraceID = "X-Request-Id"
+
+// traceHandler automatically injects trace_id from the context into log records.
+type traceHandler struct {
+	inner slog.Handler
+}
+
+func (h *traceHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.inner.Enabled(ctx, level)
+}
+
+func (h *traceHandler) Handle(ctx context.Context, r slog.Record) error {
+	if tid := TraceID(ctx); tid != "" {
+		hasTrace := false
+		r.Attrs(func(a slog.Attr) bool {
+			if a.Key == "trace_id" {
+				hasTrace = true
+				return false
+			}
+			return true
+		})
+		if !hasTrace {
+			r.AddAttrs(slog.String("trace_id", tid))
+		}
+	}
+	return h.inner.Handle(ctx, r)
+}
+
+func (h *traceHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &traceHandler{inner: h.inner.WithAttrs(attrs)}
+}
+
+func (h *traceHandler) WithGroup(name string) slog.Handler {
+	return &traceHandler{inner: h.inner.WithGroup(name)}
+}
+
+// NewLogger builds the process logger with automatic redaction and trace_id injection.
+// level: debug|info|warn|error.
 func NewLogger(level string, w io.Writer) *slog.Logger {
 	var lv slog.Level
 	switch strings.ToLower(level) {
@@ -76,10 +114,11 @@ func NewLogger(level string, w io.Writer) *slog.Logger {
 	default:
 		lv = slog.LevelInfo
 	}
-	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{
+	jsonHandler := slog.NewJSONHandler(w, &slog.HandlerOptions{
 		Level:       lv,
 		ReplaceAttr: redactAttrs,
-	}))
+	})
+	return slog.New(&traceHandler{inner: jsonHandler})
 }
 
 // ---------------------------------------------------------------------------
