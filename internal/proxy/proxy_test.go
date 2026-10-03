@@ -30,6 +30,7 @@ func TestLayering(t *testing.T) {
 		"github.com/ishwarchandra-dev/onegate/internal/protocol",
 		"github.com/ishwarchandra-dev/onegate/internal/observability",
 		"github.com/ishwarchandra-dev/onegate/internal/version",
+		"github.com/ishwarchandra-dev/onegate/internal/stream",
 	}
 	forbidden := []string{
 		"internal/server", "internal/config", "internal/storage",

@@ -2,7 +2,7 @@
 phase: 3
 name: proxy-core
 title: "Phase 3 — Reverse Proxy Core & Fallback Chains"
-status: pending
+status: done
 gate:
   - "Client → gateway → provider round-trip for all three protocols"
   - "Streaming passthrough with TTFT overhead < 10ms vs direct (mock harness)"
@@ -46,7 +46,7 @@ nodes:
   - id: p3.stream-pipeline
     title: "Streaming pipeline: provider SSE in → canonical events → client SSE out"
     owner: streaming-engineer
-    status: pending
+    status: done
     depends_on: [p3.upstream-client, p2.openai-adapter, p2.anthropic-adapter, p2.gemini-adapter]
     deliverables:
       - "internal/stream: frame reader/writer, incremental JSON, flush policy"
@@ -57,7 +57,7 @@ nodes:
   - id: p3.nonstream-path
     title: "Non-streaming path: buffered request/response with size caps"
     owner: go-engineer
-    status: pending
+    status: done
     depends_on: [p3.upstream-client]
     deliverables:
       - "Buffered proxy path with configurable max body sizes"
@@ -67,7 +67,7 @@ nodes:
   - id: p3.fallback-chain
     title: "Fallback execution engine (retry-before-first-byte semantics)"
     owner: routing-specialist
-    status: pending
+    status: done
     depends_on: [p3.upstream-client, p3.stream-pipeline]
     deliverables:
       - "Attempt loop: candidate order, safety classification, abort rules, attempt trace"
@@ -78,7 +78,7 @@ nodes:
   - id: p3.cancellation
     title: "Lifecycle & cancellation: client disconnect → provider cancel → usage finalize"
     owner: streaming-engineer
-    status: pending
+    status: done
     depends_on: [p3.stream-pipeline, p3.fallback-chain]
     deliverables:
       - "Context propagation tests; usage event always finalized (even on cancel)"
@@ -88,7 +88,7 @@ nodes:
   - id: p3.e2e-mocks
     title: "End-to-end tests against mock provider harness (all protocols, stream + non-stream)"
     owner: qa-engineer
-    status: pending
+    status: done
     depends_on: [p3.ingest-endpoints, p3.stream-pipeline, p3.nonstream-path, p3.fallback-chain, p3.cancellation]
     deliverables:
       - "System test suite + mock provider binaries"
@@ -98,7 +98,7 @@ nodes:
   - id: p3.gate
     title: "Phase 3 gate"
     owner: graph-master
-    status: pending
+    status: done
     depends_on: [p3.http-server, p3.ingest-endpoints, p3.upstream-client, p3.stream-pipeline, p3.nonstream-path, p3.fallback-chain, p3.cancellation, p3.e2e-mocks]
     deliverables:
       - "Gate report + latency budget table"

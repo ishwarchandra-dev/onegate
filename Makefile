@@ -17,48 +17,48 @@ LDFLAGS := -X $(PKG)/internal/version.Version=$(VERSION) \
 
 ## build: compile the onegate binary into bin/
 build:
-        go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/$(BINARY)
+	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/$(BINARY)
 
 ## run: build + run locally (config via flags for now)
 run:
-        go run -ldflags "$(LDFLAGS)" ./cmd/$(BINARY)
+	go run -ldflags "$(LDFLAGS)" ./cmd/$(BINARY)
 
 ## test: run all Go tests
 test:
-        go test ./...
+	go test ./...
 
 ## vet: static analysis
 vet:
-        go vet ./...
+	go vet ./...
 
 ## fmt: format Go sources
 fmt:
-        gofmt -s -w .
+	gofmt -s -w .
 
 ## lint: golangci-lint (requires https://golangci-lint.run)
 lint:
-        golangci-lint run
+	golangci-lint run
 
 ## graph: print the task-graph board (phases 0-9)
 graph:
-        @python3 scripts/graph_status.py
+	@python3 scripts/graph_status.py
 
 ## web-install: install dashboard dependencies (bun)
 web-install:
-        cd web && bun install
+	cd web && bun install
 
 ## web-dev: run the dashboard dev server (proxies /api to :7420)
 web-dev:
-        cd web && bun run dev
+	cd web && bun run dev
 
 ## web: production build of the dashboard (output: web/build)
 web:
-        cd web && bun run build
+	cd web && bun run build
 
 ## web-typecheck: typecheck the dashboard
 web-typecheck:
-        cd web && bun run typecheck
+	cd web && bun run typecheck
 
 ## clean: remove build artifacts
 clean:
-        rm -rf bin web/build web/.react-router
+	rm -rf bin web/build web/.react-router

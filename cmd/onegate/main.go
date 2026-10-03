@@ -23,8 +23,9 @@ import (
 
 	"github.com/ishwarchandra-dev/onegate/internal/auth"
 	"github.com/ishwarchandra-dev/onegate/internal/config"
-	"github.com/ishwarchandra-dev/onegate/internal/domain"
 	"github.com/ishwarchandra-dev/onegate/internal/observability"
+	"github.com/ishwarchandra-dev/onegate/internal/proxy/client"
+	"github.com/ishwarchandra-dev/onegate/internal/proxy/fallback"
 	"github.com/ishwarchandra-dev/onegate/internal/proxy/ingest"
 	"github.com/ishwarchandra-dev/onegate/internal/server"
 	"github.com/ishwarchandra-dev/onegate/internal/storage"
@@ -120,12 +121,23 @@ func run() error {
 	}
 	verifier := auth.NewVerifier(store, pepper)
 
+	// --- proxy: upstream client + fallback engine ---------------------
+	upstreamClient := client.New(client.TransportConfig{}, nil)
+	defer upstreamClient.CloseIdleConnections()
+
+	fallbackEngine := fallback.NewEngine(fallback.Config{
+		Resolver: fallback.StaticResolver{
+			Targets: nil, // Dynamic routing engine lands in Phase 4
+		},
+		Client: upstreamClient,
+		Logger: logger,
+	})
+
 	// --- HTTP server (p3.http-server + p3.ingest-endpoints) ------------
 	// The router owns the middleware chain (request-id -> access-log
 	// -> recover) and the listener timeout policy. The ingest
-	// endpoints authenticate and decode onto the mux; the proxy
-	// engine (fallback loop) replaces stubProxy in the remaining
-	// Phase 3 nodes.
+	// endpoints authenticate and decode onto the mux, forwarding
+	// execution to the fallback engine.
 	router := server.New(server.Options{
 		Logger: logger,
 		Timeouts: server.Timeouts{
@@ -139,7 +151,7 @@ func run() error {
 	})
 	ingest.Register(router.Mux(), ingest.Deps{
 		Auth:  verifier,
-		Proxy: stubProxy{}, // TODO(p3.nonstream-path): fallback engine
+		Proxy: fallbackEngine,
 	})
 	srv := router.Server(fmt.Sprintf("%s:%d", cfg.Host, cfg.Port))
 
@@ -163,28 +175,4 @@ func run() error {
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	}
-}
-
-// stubProxy answers 503 until the Phase 3 proxy engine lands. Auth and
-// protocol decoding are already live end to end, so the gateway is
-// fully exercising the inbound path with this in place.
-type stubProxy struct{}
-
-func (stubProxy) Execute(_ context.Context, w http.ResponseWriter, _ ingest.Call) {
-	body, status := encodeStubError(domain.GatewayError{
-		Status:    http.StatusServiceUnavailable,
-		Type:      domain.ErrOverloaded,
-		Message:   "proxy engine not wired yet (phase 3 in progress)",
-		Retryable: true,
-	})
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = w.Write(body)
-}
-
-func encodeStubError(ge domain.GatewayError) ([]byte, int) {
-	// The calling protocol shapes the envelope; the stub keeps it
-	// simple and reuses the openai encoding (most clients).
-	return []byte(fmt.Sprintf(`{"error":{"message":%q,"type":%q,"status":%d}}`,
-		ge.Message, ge.Type, ge.Status)), ge.Status
 }
