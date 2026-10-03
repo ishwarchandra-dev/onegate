@@ -2,7 +2,7 @@
 phase: 4
 name: routing
 title: "Phase 4 — Routing Engine, Virtual Keys & Quotas"
-status: in-progress
+status: done
 gate:
   - "Routing decision is a pure function, fully table-tested"
   - "Virtual keys enforce auth, model mapping, and quotas under -race"
@@ -108,7 +108,7 @@ nodes:
   - id: p4.gate
     title: "Phase 4 gate"
     owner: graph-master
-    status: pending
+    status: done
     depends_on: [p4.model-registry, p4.fallback-policies, p4.health-tracking, p4.virtual-keys, p4.quotas, p4.price-tables, p4.provider-429, p4.hot-reload, p4.integration]
     deliverables:
       - "Gate report"
