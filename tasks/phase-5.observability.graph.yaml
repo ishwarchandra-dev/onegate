@@ -45,7 +45,7 @@ nodes:
   - id: p5.rollups
     title: "Usage rollup tables + aggregation queries for analytics"
     owner: storage-engineer
-    status: pending
+    status: done
     depends_on: [p5.usage-events]
     deliverables:
       - "Hourly/daily rollups maintained incrementally; query API for ranges"

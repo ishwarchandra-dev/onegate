@@ -109,6 +109,20 @@ var migrations = []migration{
 			`ALTER TABLE model_targets ADD COLUMN caps_json TEXT NOT NULL DEFAULT '{}'`,
 		},
 	},
+	{
+		version: 3,
+		stmts: []string{
+			`CREATE INDEX idx_rollups_hot_window ON usage_rollups(
+				bucket_start_ms, requests, errors, prompt_tokens, completion_tokens, total_tokens, cost_usd_micros
+			)`,
+			`CREATE INDEX idx_rollups_vkey_hot ON usage_rollups(
+				vkey_id, bucket_start_ms, requests, errors, prompt_tokens, completion_tokens, total_tokens, cost_usd_micros
+			)`,
+			`CREATE INDEX idx_rollups_model_hot ON usage_rollups(
+				model_id, bucket_start_ms, requests, errors, prompt_tokens, completion_tokens, total_tokens, cost_usd_micros
+			)`,
+		},
+	},
 }
 
 // CurrentVersion is the schema version this binary understands.

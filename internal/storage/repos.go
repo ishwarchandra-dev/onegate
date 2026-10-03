@@ -542,30 +542,17 @@ type RequestRepo struct{ s *Store }
 func (s *Store) Requests() *RequestRepo { return &RequestRepo{s} }
 
 func (r *RequestRepo) Insert(rec domain.RequestRecord) error {
-	if rec.ID == "" {
-		rec.ID = rec.TraceID
-	}
-	_, err := r.s.db.Exec(`INSERT INTO requests
-                (id, trace_id, vkey_id, model_requested, model_served, provider_id, status,
-                 error_code, stream, prompt_tokens, completion_tokens, total_tokens,
-                 cost_usd_micros, latency_ms, ttft_ms, attempts, created_ms)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		rec.ID, rec.TraceID, rec.VirtualKeyID, rec.ModelRequested, rec.ModelServed,
-		rec.ProviderID, string(rec.Status), rec.ErrorCode, boolToInt(rec.Stream),
-		rec.PromptTokens, rec.CompletionTokens, rec.TotalTokens, rec.CostUSDMicros,
-		rec.LatencyMS, rec.TTFTMS, rec.Attempts, rec.CreatedMS)
-	if err != nil {
-		return fmt.Errorf("storage: insert request: %w", err)
-	}
-	return nil
+	return r.InsertBatchCtx(context.Background(), []domain.RequestRecord{rec})
 }
 
-// InsertBatch writes multiple request records within a single transaction.
+// InsertBatch writes multiple request records within a single transaction,
+// maintaining hourly usage rollups atomically.
 func (r *RequestRepo) InsertBatch(records []domain.RequestRecord) error {
 	return r.InsertBatchCtx(context.Background(), records)
 }
 
-// InsertBatchCtx writes multiple request records within a single transaction, honoring context cancellation.
+// InsertBatchCtx writes multiple request records within a single transaction,
+// maintaining hourly usage rollups atomically and honoring context cancellation.
 func (r *RequestRepo) InsertBatchCtx(ctx context.Context, records []domain.RequestRecord) error {
 	if len(records) == 0 {
 		return nil
@@ -599,6 +586,12 @@ func (r *RequestRepo) InsertBatchCtx(ctx context.Context, records []domain.Reque
 			return fmt.Errorf("storage: insert batch row: %w", err)
 		}
 	}
+
+	// Incrementally update usage_rollups in the same transaction
+	if err := r.s.Rollups().incrementBatchTx(ctx, tx, records); err != nil {
+		return fmt.Errorf("storage: update rollups in batch: %w", err)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("storage: commit insert batch: %w", err)
 	}
