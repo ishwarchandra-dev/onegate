@@ -98,7 +98,7 @@ nodes:
   - id: p4.integration
     title: "Routing integration tests: key → route → fallback → quota end-to-end"
     owner: qa-engineer
-    status: pending
+    status: done
     depends_on: [p4.fallback-policies, p4.health-tracking, p4.quotas, p4.provider-429, p4.hot-reload]
     deliverables:
       - "Integration suite with mock providers in failure modes"
