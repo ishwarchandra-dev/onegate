@@ -78,7 +78,7 @@ nodes:
   - id: p4.provider-429
     title: "Provider-side limit handling: retry-after, jittered backoff, fallback integration"
     owner: rate-limit-specialist
-    status: pending
+    status: done
     depends_on: [p4.fallback-policies]
     deliverables:
       - "429/limit parsing + backoff policy feeding fallback engine"
