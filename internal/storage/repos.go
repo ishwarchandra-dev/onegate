@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -555,6 +556,51 @@ func (r *RequestRepo) Insert(rec domain.RequestRecord) error {
 		rec.LatencyMS, rec.TTFTMS, rec.Attempts, rec.CreatedMS)
 	if err != nil {
 		return fmt.Errorf("storage: insert request: %w", err)
+	}
+	return nil
+}
+
+// InsertBatch writes multiple request records within a single transaction.
+func (r *RequestRepo) InsertBatch(records []domain.RequestRecord) error {
+	return r.InsertBatchCtx(context.Background(), records)
+}
+
+// InsertBatchCtx writes multiple request records within a single transaction, honoring context cancellation.
+func (r *RequestRepo) InsertBatchCtx(ctx context.Context, records []domain.RequestRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+	tx, err := r.s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("storage: begin insert batch: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO requests
+                (id, trace_id, vkey_id, model_requested, model_served, provider_id, status,
+                 error_code, stream, prompt_tokens, completion_tokens, total_tokens,
+                 cost_usd_micros, latency_ms, ttft_ms, attempts, created_ms)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("storage: prepare insert batch: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, rec := range records {
+		if rec.ID == "" {
+			rec.ID = rec.TraceID
+		}
+		_, err := stmt.ExecContext(ctx,
+			rec.ID, rec.TraceID, rec.VirtualKeyID, rec.ModelRequested, rec.ModelServed,
+			rec.ProviderID, string(rec.Status), rec.ErrorCode, boolToInt(rec.Stream),
+			rec.PromptTokens, rec.CompletionTokens, rec.TotalTokens, rec.CostUSDMicros,
+			rec.LatencyMS, rec.TTFTMS, rec.Attempts, rec.CreatedMS)
+		if err != nil {
+			return fmt.Errorf("storage: insert batch row: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("storage: commit insert batch: %w", err)
 	}
 	return nil
 }

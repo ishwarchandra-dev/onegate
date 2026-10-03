@@ -413,3 +413,60 @@ func TestRoutingRulesCRUD(t *testing.T) {
 		t.Fatalf("want ErrNotFound, got %v", err)
 	}
 }
+
+func TestRequestRepo_InsertBatch(t *testing.T) {
+	s := openMigrated(t)
+	repo := s.Requests()
+
+	// Empty batch should be no-op
+	if err := repo.InsertBatch(nil); err != nil {
+		t.Fatalf("InsertBatch(nil): %v", err)
+	}
+
+	records := make([]domain.RequestRecord, 50)
+	for i := 0; i < 50; i++ {
+		records[i] = domain.RequestRecord{
+			ID:               fmt.Sprintf("batch-req-%02d", i),
+			TraceID:          fmt.Sprintf("trace-%02d", i),
+			VirtualKeyID:     "vkey-batch",
+			ModelRequested:   "gpt-4o",
+			ModelServed:      "gpt-4o-2024-08-06",
+			ProviderID:       "openai-main",
+			Status:           domain.RequestSuccess,
+			PromptTokens:     int64(10 + i),
+			CompletionTokens: int64(20 + i),
+			TotalTokens:      int64(30 + 2*i),
+			CostUSDMicros:    int64(100 + i),
+			LatencyMS:        int64(50 + i),
+			TTFTMS:           int64(10 + i),
+			Attempts:         1,
+			CreatedMS:        int64(5000 + i),
+		}
+	}
+
+	if err := repo.InsertBatch(records); err != nil {
+		t.Fatalf("InsertBatch: %v", err)
+	}
+
+	page, err := repo.ListByTime("vkey-batch", 100, "")
+	if err != nil {
+		t.Fatalf("ListByTime: %v", err)
+	}
+	if len(page.Items) != 50 {
+		t.Fatalf("expected 50 items, got %d", len(page.Items))
+	}
+
+	// Verify fields of one record
+	found := false
+	for _, item := range page.Items {
+		if item.ID == "batch-req-05" {
+			found = true
+			if item.TraceID != "trace-05" || item.ModelRequested != "gpt-4o" || item.PromptTokens != 15 || item.CompletionTokens != 25 {
+				t.Fatalf("record mismatch: %+v", item)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("batch-req-05 not found")
+	}
+}

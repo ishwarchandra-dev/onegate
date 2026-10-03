@@ -27,6 +27,7 @@ import (
 	"github.com/ishwarchandra-dev/onegate/internal/proxy/client"
 	"github.com/ishwarchandra-dev/onegate/internal/proxy/fallback"
 	"github.com/ishwarchandra-dev/onegate/internal/proxy/ingest"
+	"github.com/ishwarchandra-dev/onegate/internal/ratelimit"
 	"github.com/ishwarchandra-dev/onegate/internal/server"
 	"github.com/ishwarchandra-dev/onegate/internal/storage"
 	"github.com/ishwarchandra-dev/onegate/internal/version"
@@ -121,6 +122,19 @@ func run() error {
 	}
 	verifier := auth.NewVerifier(store, pepper)
 
+	// --- usage pipeline: bounded queue + background writer (Phase 5) --
+	prices := ratelimit.NewPriceTable()
+	usagePipeline := observability.NewUsagePipeline(observability.UsagePipelineConfig{
+		QueueSize:     10_000,
+		BatchSize:     100,
+		FlushInterval: 100 * time.Millisecond,
+		Writer:        store.Requests(),
+		Prices:        prices,
+		Logger:        logger,
+	})
+	usagePipeline.Start(ctx)
+	defer usagePipeline.Stop()
+
 	// --- proxy: upstream client + fallback engine ---------------------
 	upstreamClient := client.New(client.TransportConfig{}, nil)
 	defer upstreamClient.CloseIdleConnections()
@@ -131,6 +145,9 @@ func run() error {
 		},
 		Client: upstreamClient,
 		Logger: logger,
+		OnUsage: func(ue fallback.UsageEvent) {
+			usagePipeline.EnqueueEvent(ue.ToObservabilityEvent())
+		},
 	})
 
 	// --- HTTP server (p3.http-server + p3.ingest-endpoints) ------------

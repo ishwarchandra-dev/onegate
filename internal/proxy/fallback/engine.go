@@ -68,10 +68,12 @@ type Trace struct {
 // billing and analytics (Phase 5 integration).
 type UsageEvent struct {
 	CallID         string
+	VirtualKeyID   string
 	ModelRequested string
 	ModelServed    string
 	ProviderID     string
 	Status         domain.RequestStatus
+	ErrorCode      string
 	Stream         bool
 	Usage          domain.TokenUsage
 	Duration       time.Duration
@@ -79,6 +81,26 @@ type UsageEvent struct {
 	Attempts       int
 	Completed      bool
 	Cancelled      bool
+}
+
+// ToObservabilityEvent maps UsageEvent to observability.Event for the usage pipeline.
+func (u UsageEvent) ToObservabilityEvent() observability.Event {
+	return observability.Event{
+		CallID:           u.CallID,
+		VirtualKeyID:     u.VirtualKeyID,
+		ModelRequested:   u.ModelRequested,
+		ModelServed:      u.ModelServed,
+		ProviderID:       u.ProviderID,
+		Status:           u.Status,
+		ErrorCode:        u.ErrorCode,
+		Stream:           u.Stream,
+		PromptTokens:     u.Usage.InputTokens,
+		CompletionTokens: u.Usage.OutputTokens,
+		TotalTokens:      u.Usage.TotalTokens,
+		Duration:         u.Duration,
+		TTFT:             u.TTFT,
+		Attempts:         u.Attempts,
+	}
 }
 
 // Engine executes calls against an ordered list of candidate targets with
@@ -129,8 +151,14 @@ func NewEngine(cfg Config) *Engine {
 func (e *Engine) Execute(ctx context.Context, w http.ResponseWriter, call ingest.Call) {
 	start := time.Now()
 
+	callID := observability.TraceID(ctx)
+	if callID == "" {
+		callID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+	}
+
 	usageEv := UsageEvent{
-		CallID:         observability.TraceID(ctx),
+		CallID:         callID,
+		VirtualKeyID:   call.Key.ID,
 		ModelRequested: call.Request.Model,
 		Stream:         call.Stream,
 	}
@@ -146,10 +174,23 @@ func (e *Engine) Execute(ctx context.Context, w http.ResponseWriter, call ingest
 		if ctx.Err() != nil || usageEv.Cancelled {
 			usageEv.Status = domain.RequestCancelled
 			usageEv.Cancelled = true
+			if usageEv.ErrorCode == "" {
+				usageEv.ErrorCode = "context_canceled"
+			}
 		} else if usageEv.Completed {
 			usageEv.Status = domain.RequestSuccess
 		} else {
 			usageEv.Status = domain.RequestError
+			if usageEv.ErrorCode == "" && len(trace.Attempts) > 0 {
+				lastAtt := trace.Attempts[len(trace.Attempts)-1]
+				if lastAtt.Error != nil {
+					if lastAtt.Error.Code != "" {
+						usageEv.ErrorCode = lastAtt.Error.Code
+					} else {
+						usageEv.ErrorCode = string(lastAtt.Error.Type)
+					}
+				}
+			}
 		}
 
 		if e.onUsage != nil {
@@ -170,6 +211,7 @@ func (e *Engine) Execute(ctx context.Context, w http.ResponseWriter, call ingest
 		if err != nil {
 			ge.Message = fmt.Sprintf("resolve targets: %v", err)
 		}
+		usageEv.ErrorCode = string(ge.Type)
 		nonstream.RenderError(w, call.Protocol, ge)
 		return
 	}

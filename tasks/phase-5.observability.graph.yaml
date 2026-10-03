@@ -23,7 +23,7 @@ nodes:
   - id: p5.usage-events
     title: "Usage event pipeline: capture, enrich, batch-write to storage"
     owner: observability-engineer
-    status: pending
+    status: done
     depends_on: [p5.trace-context, p1.storage-repos]
     deliverables:
       - "Bounded queue + background writer; drop-and-count on overflow"

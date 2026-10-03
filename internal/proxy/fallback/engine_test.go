@@ -2,6 +2,7 @@ package fallback
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ishwarchandra-dev/onegate/internal/domain"
+	"github.com/ishwarchandra-dev/onegate/internal/observability"
 	"github.com/ishwarchandra-dev/onegate/internal/proxy/client"
 	"github.com/ishwarchandra-dev/onegate/internal/proxy/ingest"
 )
@@ -339,5 +341,147 @@ func TestFallbackContextCancellation(t *testing.T) {
 
 	if target1Hits.Load() != 0 {
 		t.Fatalf("target was hit despite canceled context")
+	}
+}
+
+func TestUsageEvent_EmittedExactlyOncePerRequest(t *testing.T) {
+	// Provider mock: echoes response or fails
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		switch {
+		case strings.Contains(path, "fail"):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":{"message":"internal error","type":"server_error","code":"server_error"}}`))
+		case strings.Contains(path, "stream"):
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("data: {\"id\":\"1\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n"))
+			_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"chatcmpl-1","choices":[{"message":{"role":"assistant","content":"Hi"}}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`))
+		}
+	}))
+	defer srv.Close()
+
+	cli := client.New(client.TransportConfig{}, nil)
+
+	testCases := []struct {
+		name           string
+		stream         bool
+		path           string
+		cancelBefore   bool
+		noTargets      bool
+		expectedStatus domain.RequestStatus
+		expectedErr    bool
+	}{
+		{
+			name:           "success_buffered",
+			stream:         false,
+			path:           "/v1/chat/completions",
+			expectedStatus: domain.RequestSuccess,
+		},
+		{
+			name:           "success_streaming",
+			stream:         true,
+			path:           "/v1/chat/completions/stream",
+			expectedStatus: domain.RequestSuccess,
+		},
+		{
+			name:           "provider_error_buffered",
+			stream:         false,
+			path:           "/v1/chat/completions/fail",
+			expectedStatus: domain.RequestError,
+			expectedErr:    true,
+		},
+		{
+			name:           "canceled_before_execute",
+			stream:         false,
+			path:           "/v1/chat/completions",
+			cancelBefore:   true,
+			expectedStatus: domain.RequestCancelled,
+			expectedErr:    true,
+		},
+		{
+			name:           "no_targets_overloaded",
+			stream:         false,
+			noTargets:      true,
+			expectedStatus: domain.RequestError,
+			expectedErr:    true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var emitCount atomic.Int32
+			var capturedEvent UsageEvent
+
+			var targets []Target
+			if !tc.noTargets {
+				targets = []Target{
+					{
+						Provider: client.Provider{
+							ID:       "test-provider",
+							Protocol: domain.ProtocolOpenAI,
+							BaseURL:  srv.URL + tc.path,
+							APIKey:   "k-test",
+						},
+						Model: "gpt-4o",
+					},
+				}
+			}
+
+			engine := NewEngine(Config{
+				Resolver: StaticResolver{Targets: targets},
+				Client:   cli,
+				OnUsage: func(u UsageEvent) {
+					emitCount.Add(1)
+					capturedEvent = u
+				},
+			})
+
+			ctx, cancel := context.WithCancel(context.Background())
+			if tc.cancelBefore {
+				cancel()
+			} else {
+				defer cancel()
+			}
+
+			traceID := fmt.Sprintf("trace-%s", tc.name)
+			ctx = observability.WithTraceID(ctx, traceID)
+
+			rec := httptest.NewRecorder()
+			engine.Execute(ctx, rec, ingest.Call{
+				Protocol: domain.ProtocolOpenAI,
+				Stream:   tc.stream,
+				Key:      domain.VirtualKey{ID: "vkey-test-key"},
+				Request: domain.Request{
+					Model: "gpt-4o",
+					Messages: []domain.Message{
+						{Role: domain.RoleUser, Content: []domain.ContentBlock{{Type: domain.BlockText, Text: "test"}}},
+					},
+				},
+			})
+
+			// Acceptance: Final usage event emitted exactly once per request
+			if emitCount.Load() != 1 {
+				t.Fatalf("expected usage event emitted exactly once, got %d", emitCount.Load())
+			}
+
+			if capturedEvent.CallID != traceID {
+				t.Fatalf("expected CallID %s, got %s", traceID, capturedEvent.CallID)
+			}
+			if capturedEvent.VirtualKeyID != "vkey-test-key" {
+				t.Fatalf("expected VirtualKeyID vkey-test-key, got %s", capturedEvent.VirtualKeyID)
+			}
+			if capturedEvent.Status != tc.expectedStatus {
+				t.Fatalf("expected status %s, got %s (errorCode=%s)", tc.expectedStatus, capturedEvent.Status, capturedEvent.ErrorCode)
+			}
+			if tc.expectedErr && capturedEvent.ErrorCode == "" {
+				t.Fatalf("expected non-empty ErrorCode for error/cancelled request")
+			}
+		})
 	}
 }
