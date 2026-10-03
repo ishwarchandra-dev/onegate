@@ -56,7 +56,7 @@ nodes:
   - id: p5.live-logs
     title: "Live log ring buffer + SSE feed with filters"
     owner: observability-engineer
-    status: pending
+    status: done
     depends_on: [p5.trace-context]
     deliverables:
       - "In-memory ring + subscription hub; level/trace/provider filters"

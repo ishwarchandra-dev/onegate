@@ -83,7 +83,8 @@ func run() error {
 		return err
 	}
 
-	logger := observability.NewLogger(cfg.LogLevel, os.Stdout)
+	logHub := observability.NewLogHub(1000)
+	logger := observability.NewLoggerWithHub(cfg.LogLevel, os.Stdout, logHub)
 
 	if err := config.EnsureDataDir(cfg); err != nil {
 		return err
@@ -187,6 +188,7 @@ func run() error {
 		Auth:  verifier,
 		Proxy: fallbackEngine,
 	})
+	router.Mux().Handle("GET /api/logs/live", logHub)
 	srv := router.Server(fmt.Sprintf("%s:%d", cfg.Host, cfg.Port))
 
 	errCh := make(chan error, 1)

@@ -103,6 +103,12 @@ func (h *traceHandler) WithGroup(name string) slog.Handler {
 // NewLogger builds the process logger with automatic redaction and trace_id injection.
 // level: debug|info|warn|error.
 func NewLogger(level string, w io.Writer) *slog.Logger {
+	return NewLoggerWithHub(level, w, nil)
+}
+
+// NewLoggerWithHub builds the process logger with automatic redaction,
+// trace_id injection, and broadcast to LogHub for the dashboard live log feed.
+func NewLoggerWithHub(level string, w io.Writer, hub *LogHub) *slog.Logger {
 	var lv slog.Level
 	switch strings.ToLower(level) {
 	case "debug":
@@ -118,7 +124,11 @@ func NewLogger(level string, w io.Writer) *slog.Logger {
 		Level:       lv,
 		ReplaceAttr: redactAttrs,
 	})
-	return slog.New(&traceHandler{inner: jsonHandler})
+	var h slog.Handler = &traceHandler{inner: jsonHandler}
+	if hub != nil {
+		h = &HubHandler{inner: h, hub: hub}
+	}
+	return slog.New(h)
 }
 
 // ---------------------------------------------------------------------------
