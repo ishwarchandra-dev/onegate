@@ -46,7 +46,7 @@ nodes:
   - id: p4.virtual-keys
     title: "Virtual keys: generate, hash (argon2id), verify, scope, revoke"
     owner: security-engineer
-    status: pending
+    status: done
     depends_on: [p3.gate]
     deliverables:
       - "internal/auth/vkeys + storage integration"

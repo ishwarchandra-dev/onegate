@@ -454,6 +454,66 @@ func (r *VirtualKeyRepo) TouchLastUsed(id string, atMS int64) error {
 	return err // missing row is fine here (best effort)
 }
 
+func (r *VirtualKeyRepo) List() ([]domain.VirtualKey, error) {
+	rows, err := r.s.db.Query(`SELECT id, name, prefix, key_hash, scopes_json,
+                limits_json, status, created_ms, expires_ms, last_used_ms
+                FROM virtual_keys ORDER BY created_ms DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list vkeys: %w", err)
+	}
+	defer rows.Close()
+	var out []domain.VirtualKey
+	for rows.Next() {
+		k, err := scanVKey(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
+
+func (r *VirtualKeyRepo) Delete(id string) error {
+	res, err := r.s.db.Exec(`DELETE FROM virtual_keys WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("storage: delete vkey: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *VirtualKeyRepo) UpdateScopes(id string, scopes domain.KeyScopes) error {
+	b, err := json.Marshal(scopes)
+	if err != nil {
+		return fmt.Errorf("storage: marshal scopes: %w", err)
+	}
+	res, err := r.s.db.Exec(`UPDATE virtual_keys SET scopes_json = ? WHERE id = ?`, string(b), id)
+	if err != nil {
+		return fmt.Errorf("storage: update vkey scopes: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *VirtualKeyRepo) UpdateLimits(id string, limits domain.KeyLimits) error {
+	b, err := json.Marshal(limits)
+	if err != nil {
+		return fmt.Errorf("storage: marshal limits: %w", err)
+	}
+	res, err := r.s.db.Exec(`UPDATE virtual_keys SET limits_json = ? WHERE id = ?`, string(b), id)
+	if err != nil {
+		return fmt.Errorf("storage: update vkey limits: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func scanVKey(row rowScanner) (domain.VirtualKey, error) {
 	var k domain.VirtualKey
 	var scopes, limits, status string
