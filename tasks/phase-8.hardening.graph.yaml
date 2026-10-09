@@ -40,12 +40,15 @@ nodes:
   - id: p8.chaos-catalog
     title: "Chaos catalog run: provider outages, truncation, stalls, disk-full, fd exhaustion"
     owner: chaos-engineer
-    status: pending
+    status: done
     depends_on: [p7.gate]
     deliverables:
       - "Scenario results with reproducers under scripts/chaos/"
     acceptance:
       - "Every scenario matches its written expected behavior or yields a fix node"
+    evidence:
+      - "scripts/chaos/chaos.py — live reproducers: outage (kill/restart provider, full circuit timeline incl. half-open recovery), truncation, stall+disconnect (cancelled usage, zero goroutine leak), fd-exhaust (RLIMIT_NOFILE=64 preexec, 80 held connections)"
+      - "docs/reports/chaos-catalog.md — 4/4 live scenarios MATCH: outage 200->502/503->circuit 503->recovery 200; truncation error-frame-no-DONE; stall cancelled+goroutines 10->10; fd-exhaust 27 ok + explicit 502/503, zero hangs, full recovery; disk-full covered by existing unit evidence (StorageFailureResilience); findings register: 2 observations, 0 fix nodes needed"
 
   - id: p8.crash-recovery
     title: "Crash recovery matrix: kill -9 at request/commit/migration moments; WAL recovery"
