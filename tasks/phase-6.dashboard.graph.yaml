@@ -79,52 +79,79 @@ nodes:
   - id: p6.view-providers
     title: "Providers view: list, add/edit (masked keys), enable/disable, test connection"
     owner: frontend-engineer
-    status: pending
+    status: done
     depends_on: [p6.api-impl, p6.design-system]
     deliverables:
       - "Routes + components + optimistic updates"
     acceptance:
       - "Test connection surfaces per-protocol error detail"
+    evidence:
+      - "web/app/routes/providers.tsx: table with masked keys, add/edit dialog (api_key write-only, blank keeps credential), optimistic enable/disable with revert, delete"
+      - "Test connection surfaces per-protocol error detail: probe renders ok+latency or the provider's own status + canonical error type (ProbeResult badge + title detail)"
+      - "Session-gated shell (_dashboard.tsx) + login/first-run wizard (login.tsx) + singleton API client with CSRF plumbing (lib/api/index.ts)"
+      - "bun run build + typecheck green"
 
   - id: p6.view-routing
     title: "Models & routing view: registry, fallback chains editor, health states"
     owner: frontend-engineer
-    status: pending
+    status: done
     depends_on: [p6.api-impl, p6.design-system]
     deliverables:
       - "Chain editor with drag ordering + validation"
     acceptance:
       - "Invalid chains rejected client and server side"
+    evidence:
+      - "web/app/routes/routing.tsx: model cards, per-model policy select (rule create/replace), targets table with circuit-health badges from GET /api/routing/health"
+      - "Chain editor with ordered rows (move/remove/add); invalid chains rejected client-side (empty chain, unknown provider, blank fields, weight<1) AND server-side 400s rendered inline"
+      - "Dangling provider references flagged inline"
+      - "bun run build + typecheck green"
 
   - id: p6.view-keys
     title: "Virtual keys view: create (show-once), scopes, quotas, revoke"
     owner: frontend-engineer
-    status: pending
+    status: done
     depends_on: [p6.api-impl, p6.design-system]
     deliverables:
       - "Key management UI + usage summary per key"
     acceptance:
       - "Raw key displayed exactly once with copy + warning"
+    evidence:
+      - "web/app/routes/keys.tsx: table (prefix, limits summary, status, last used), mint dialog, revoke (confirm), delete (confirm, distinct from revoke)"
+      - "Show-once dialog: raw ogk- key displayed EXACTLY ONCE with copy button + unrecoverable warning; raw key never in list/detail after mint"
+      - "bun run build + typecheck green"
 
   - id: p6.view-usage
     title: "Usage analytics view: requests, tokens, cost, latency charts over time"
     owner: frontend-engineer
-    status: pending
+    status: done
     depends_on: [p6.api-impl, p5.rollups]
     deliverables:
       - "Time-range selectors, per-model/provider breakdowns, CSV export"
     acceptance:
       - "Charts stream from rollup API; empty and error states designed"
+    evidence:
+      - "web/app/routes/usage.tsx: summary cards (requests/tokens/cost/error-rate) from /api/usage/summary; charts stream from /api/usage/range (requests vs errors, tokens, cost)"
+      - "Zero-dependency SVG BarChart with design-system palette tokens, series toggles, accessible ChartTable fallback; missing buckets zero-filled"
+      - "Time-range selectors (24h/7d/30d), recent requests table, CSV export"
+      - "Empty and error states designed (empty-window panel, inline error)"
+      - "bun run build + typecheck green"
 
   - id: p6.view-logs
     title: "Live logs view: SSE stream with filters and trace details"
     owner: frontend-engineer
-    status: pending
+    status: done
     depends_on: [p6.api-impl, p5.live-logs]
     deliverables:
       - "Live tail + pause + filter; trace drill-down drawer"
     acceptance:
       - "Backpressure drops visible as a gap indicator, not a freeze"
+    evidence:
+      - "web/app/routes/logs.tsx: EventSource live tail + ring snapshot seed; live/disconnected badge; level + trace filters reconnect the stream"
+      - "Pause keeps the connection but stops rendering (never a freeze); bounded 500-entry buffer"
+      - "Backpressure drops render as StreamGapIndicator rows (SSE 'dropped' events) — a visible gap, per the acceptance criterion"
+      - "Trace drill-down drawer (entry detail + attrs JSON)"
+      - "settings.tsx read-only config view completes the gate's settings view"
+      - "bun run build + typecheck green"
 
   - id: p6.e2e-dashboard
     title: "Dashboard E2E suite (playwright) against seeded gateway"
