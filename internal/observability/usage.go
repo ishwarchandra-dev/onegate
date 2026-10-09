@@ -52,6 +52,7 @@ type Event struct {
 	TTFT             time.Duration
 	Attempts         int
 	CreatedMS        int64
+	CostMultiplier   int // percent, 100 = nominal; 0 treated as nominal
 }
 
 // UsagePipelineConfig configures the bounded usage event pipeline.
@@ -241,11 +242,14 @@ func (p *UsagePipeline) Enrich(ev Event) domain.RequestRecord {
 		}
 	}
 
-	// Cost enrichment via price table
+	// Cost enrichment via price table. Pricing follows the CANONICAL model
+	// the client requested (OmniRoute behavior: the client's model identity
+	// carries the price; provider remaps adjust through the target cost
+	// multiplier, not the model id).
 	if rec.CostUSDMicros == 0 && p.prices != nil {
-		modelForPrice := rec.ModelServed
+		modelForPrice := rec.ModelRequested
 		if modelForPrice == "" {
-			modelForPrice = rec.ModelRequested
+			modelForPrice = rec.ModelServed
 		}
 		if modelForPrice != "" {
 			usage := domain.TokenUsage{
@@ -253,7 +257,7 @@ func (p *UsagePipeline) Enrich(ev Event) domain.RequestRecord {
 				OutputTokens: rec.CompletionTokens,
 				TotalTokens:  rec.TotalTokens,
 			}
-			rec.CostUSDMicros = p.prices.CalculateCost(modelForPrice, usage, 100)
+			rec.CostUSDMicros = p.prices.CalculateCost(modelForPrice, usage, multiplierOrNominal(ev.CostMultiplier))
 		}
 	}
 
@@ -379,4 +383,12 @@ func (p *UsagePipeline) drainAndFlush(batch *[]domain.RequestRecord, flush func(
 			return
 		}
 	}
+}
+
+// multiplierOrNominal normalizes a cost multiplier (percent) to nominal.
+func multiplierOrNominal(m int) int {
+	if m <= 0 {
+		return 100
+	}
+	return m
 }

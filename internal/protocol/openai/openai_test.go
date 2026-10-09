@@ -405,9 +405,10 @@ func TestErrors(t *testing.T) {
 		t.Fatalf("html error: %+v", ge)
 	}
 
-	// Authentication by status + code.
+	// Authentication by status + code. Provider-side auth failures retry
+	// across targets (checklist C-16, p7.parity-fixes).
 	ge = DecodeError([]byte(`{"error":{"message":"Incorrect API key","code":"invalid_api_key"}}`), 401)
-	if ge.Type != domain.ErrAuthentication || ge.Retryable {
+	if ge.Type != domain.ErrAuthentication || !ge.Retryable {
 		t.Fatalf("auth error: %+v", ge)
 	}
 

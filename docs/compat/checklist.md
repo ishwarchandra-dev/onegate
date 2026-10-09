@@ -33,7 +33,7 @@ divergence" without a migration note).
 | A-4 | `POST /v1/messages` with `"stream":true` returns Anthropic SSE | parity | e2e stream; corpus CC-06 |
 | A-5 | `POST /v1beta/models/{model}:generateContent` (buffered) | parity | e2e gemini path; corpus CC-09 |
 | A-6 | `POST /v1beta/models/{model}:streamGenerateContent` returns SSE (`?alt=sse` accepted and ignored) | parity | e2e gemini stream; corpus CC-10 |
-| A-7 | `GET /v1/models` lists canonical models (`{object:"list", data:[{id, object:"model", …}]}`); keys see only scope-allowed models | gap (blocker) | missing: `internal/proxy/ingest/ingest.go` registers no listing; fix p7.parity-fixes; corpus CC-13 |
+| A-7 | `GET /v1/models` lists canonical models (`{object:"list", data:[{id, object:"model", …}]}`); keys see only scope-allowed models | parity | GET /v1/models implemented (ingest models.go, registry-backed, scope-filtered); corpus CC-13 |
 | A-8 | `GET /healthz` → `200` JSON `{status:"ok", …}` (public) | parity | `internal/server/server_test.go` TestHealthz |
 | A-9 | `GET /metrics` Prometheus text; 401 for non-admin when `ONEGATE_ADMIN_TOKEN` set; open when unset | parity | `internal/server/metrics.go`; `internal/observability/metrics_test.go` |
 | A-10 | Unknown Gemini method (`:foo`) → 404 in Gemini envelope `{"error":{code:404,…}}` | parity | `internal/proxy/ingest/ingest.go` splitGeminiTarget; corpus CC-12 |
@@ -49,7 +49,7 @@ divergence" without a migration note).
 | B-2 | Absent/invalid → generated `req-` + 32 hex; set on the response | parity | `internal/server/trace_test.go` TestGenerate |
 | B-3 | SSE responses: `Content-Type: text/event-stream; charset=utf-8`, `Cache-Control: no-cache` | parity | `internal/stream/writer.go` writeHeaders; corpus CC-02/06/10 |
 | B-4 | JSON responses: `Content-Type: application/json; charset=utf-8` | parity | `internal/proxy/nonstream/nonstream.go`; corpus CC-01 |
-| B-5 | Quota 429s carry `Retry-After: <seconds>` | gap (blocker) | quota not enforced on the data plane yet (see C-6..C-9); fix p7.parity-fixes; corpus CC-17 |
+| B-5 | Quota 429s carry `Retry-After: <seconds>` | parity | quota 429s render Retry-After via GatewayError.RetryAfterSec; corpus CC-17/38/39/40 |
 | B-6 | Upstream `Retry-After` preserved on terminal provider 429 (after fallback exhausts) | parity | `internal/ratelimit/backoff.go` parsing; corpus CC-18 |
 | B-7 | No CORS headers on proxy endpoints (OmniRoute never sent them) | parity | no CORS middleware in `internal/server`; corpus CC-15 |
 | B-8 | SSE frames flushed per event (no buffering past first byte); keep-alive comment frames on idle ≥ 15 s | partial | per-event flush: `internal/stream/pipeline.go`; idle keep-alive pings not emitted (gap, cosmetic — no OmniRoute client depended on pings under 60 s idle; documented in report-phase7) |
@@ -68,24 +68,24 @@ OpenAI `{"error":{message,type,code,param?}}`, Anthropic
 | C-3 | Well-formed but unknown → 401 code `invalid_api_key`, "invalid API key" (same as C-2 — indistinguishable by design) | parity | ingest; corpus CC-37 |
 | C-4 | Revoked key → 403 `permission_error`, code `key_revoked`, "API key has been revoked" | parity | ingest; corpus CC-19 |
 | C-5 | Expired key → 403 `permission_error`, code `key_expired`, "API key has expired" | parity | ingest; corpus CC-20 |
-| C-6 | RPM limit exceeded → 429 `rate_limit_error`, code `rpm_limit_exceeded`, `Retry-After` set | gap (blocker) | `internal/ratelimit/quota.go` implements; not wired into `cmd/onegate` data plane (StaticResolver). Fix p7.parity-fixes; corpus CC-17 |
-| C-7 | TPM limit exceeded → 429 code `tpm_limit_exceeded` | gap (blocker) | same as C-6; corpus CC-38 |
-| C-8 | Spend cap exceeded → 429 code `spend_limit_exceeded` | gap (blocker) | same as C-6; corpus CC-39 |
-| C-9 | Concurrency cap exceeded → 429 code `concurrency_limit_exceeded` | gap (blocker) | same as C-6; corpus CC-40 |
-| C-10 | Unknown model/alias → 404 `not_found_error`, message "model not found: <id>" | gap (blocker) | engine currently renders resolve failures as 503 `overloaded` (`internal/proxy/fallback/engine.go` Execute). Fix p7.parity-fixes; corpus CC-21 |
-| C-11 | Model denied by key scope → 403 `permission_error`, "model not allowed by virtual key scope" | gap (blocker) | same resolve-path defect as C-10; corpus CC-22 |
-| C-12 | All provider targets denied by scope → 403 `permission_error` | gap (blocker) | same; corpus CC-23 |
+| C-6 | RPM limit exceeded → 429 `rate_limit_error`, code `rpm_limit_exceeded`, `Retry-After` set | parity | quotaProxy gate wired in cmd/onegate; corpus CC-17 |
+| C-7 | TPM limit exceeded → 429 code `tpm_limit_exceeded` | parity | TPM debit after response; corpus CC-38 |
+| C-8 | Spend cap exceeded → 429 code `spend_limit_exceeded` | parity | spend cap by canonical-model pricing; corpus CC-39 |
+| C-9 | Concurrency cap exceeded → 429 code `concurrency_limit_exceeded` | parity | concurrency gate; corpus CC-40 |
+| C-10 | Unknown model/alias → 404 `not_found_error`, message "model not found: <id>" | parity | routing.ClientError -> ResolveError seam; corpus CC-21 |
+| C-11 | Model denied by key scope → 403 `permission_error`, "model not allowed by virtual key scope" | parity | corpus CC-22 |
+| C-12 | All provider targets denied by scope → 403 `permission_error` | parity | corpus CC-23 |
 | C-13 | Invalid JSON body → 400 `invalid_request_error` | parity | ingest serve; corpus CC-24 |
 | C-14 | Missing required fields (e.g. Anthropic without `max_tokens`) → 400 with adapter message | parity | `quirk:anthropic-max-tokens-required`; `internal/protocol/anthropic/request.go`; corpus CC-25 |
 | C-15 | Body > 32 MiB → 413 `request_too_large`, code `request_body_too_large` | parity | ingest readBody; corpus CC-26 |
-| C-16 | Upstream 401 (bad provider key) → retried on next target; exhausted → 502 `api_error` with code `upstream_authentication` | gap (blocker) | provider-error mapping lacks the `upstream_authentication` code today (`internal/proxy/fallback/engine.go` terminal render). Fix p7.parity-fixes; corpus CC-27, CC-31 |
-| C-17 | Upstream 429 → fallback to next target; exhausted → 429 in client envelope with `Retry-After` preserved | parity (pending data-plane wiring) | `internal/proxy/fallback/engine_test.go`; corpus CC-18 |
-| C-18 | Upstream 5xx → fallback; exhausted → 502 `api_error` | parity (pending data-plane wiring) | engine_test; corpus CC-28 |
+| C-16 | Upstream 401 (bad provider key) → retried on next target; exhausted → 502 `api_error` with code `upstream_authentication` | parity | terminalError remap: upstream auth -> 502 upstream_authentication, auth retryable across targets; corpus CC-27/CC-31 |
+| C-17 | Upstream 429 → fallback to next target; exhausted → 429 in client envelope with `Retry-After` preserved | parity | data plane wired; corpus CC-18 |
+| C-18 | Upstream 5xx → fallback; exhausted → 502 `api_error` | parity | 5xx exhaustion -> 502; fallback success CC-04; corpus CC-28 |
 | C-19 | Anthropic-style 529 overloaded → mapped to 503 `overloaded_error` (client envelope), retried across targets | parity | `internal/protocol/anthropic/errors.go`; corpus CC-29 |
 | C-20 | Context-length exceeded → 400 `invalid_request_error`, code `context_length_exceeded` (provider code passthrough) | parity | adapter DecodeError passthrough; corpus CC-30 |
 | C-21 | Gateway timeout (upstream stall) → 504 `timeout_error` | parity | `internal/proxy/client/client_test.go` timeout classification (120 s default budget is too long for replay; same code path exercised by CC-31) |
 | C-22 | Client disconnect: upstream cancelled, usage recorded as `cancelled` (499 internal), no response written | parity | `internal/proxy/fallback/cancellation_test.go` |
-| C-23 | All targets unhealthy (circuit open) → 503 `overloaded_error`, "no healthy targets available" | gap (blocker) | health tracker not wired to data plane; fix p7.parity-fixes; corpus CC-32 |
+| C-23 | All targets unhealthy (circuit open) → 503 `overloaded_error`, "no healthy targets available" | parity | circuit opens after 3 failures via OnTrace feedback; corpus CC-32 |
 | C-24 | Credential extraction per protocol: OpenAI `Authorization: Bearer` (fallback `x-api-key`), Anthropic `x-api-key` (fallback Bearer), Gemini `x-goog-api-key` then `?key=` | parity | `internal/proxy/ingest/ingest.go` handlers; corpus CC-16 |
 
 ## D. Streaming event order
@@ -150,21 +150,23 @@ through the canonical core.
 | G-2 | OpenAI client → Gemini provider | parity | conformance; corpus CC-09 |
 | G-3 | Anthropic client → OpenAI provider (incl. thinking-block fold) | parity | conformance; corpus CC-11 |
 | G-4 | Gemini client → OpenAI provider | parity | conformance; corpus CC-11 |
-| G-5 | Model aliasing: canonical id + aliases resolve to the same route | gap (blocker) | `internal/routing/registry.go` implements; data plane not wired (see C-10); corpus CC-21 |
-| G-6 | Per-key policy override swaps fallback order at request time | gap (blocker) | routing policy implements; data plane not wired; corpus CC-34 |
-| G-7 | Provider model remap (canonical ≠ provider model) | gap (blocker) | same wiring gap; corpus CC-35 |
+| G-5 | Model aliasing: canonical id + aliases resolve to the same route | parity | corpus CC-21 |
+| G-6 | Per-key policy override swaps fallback order at request time | parity | corpus CC-34 |
+| G-7 | Provider model remap (canonical ≠ provider model) | parity | corpus CC-35 |
 
 ## Rollup
 
-- 79 rows: 55 parity (of which 2 pending data-plane wiring, 1 documented
-  divergent version string), 4 partial (all cosmetic, documented), 1 n/a,
-  **16 gap (blocker)**.
-- Every gap row converges on two root causes: (1) the production data plane
-  does not route through the Phase 4 engine (C-6..C-12, C-23, G-5..G-7, and
-  the "pending wiring" rows), (2) missing surfaces/codes (A-7, B-5, C-16,
-  E-8, F-5).
-- Root cause (1) fix: wire `cmd/onegate` through a production
-  `routingTargetResolver` (registry + health) + quota-aware proxy wrapper —
-  exactly the composition proven by `internal/routing/integration_test.go`.
-- Corpus references (CC-nn) are defined by p7.capture-corpus; the replay
-  harness (p7.replay-harness) is the evidence engine for every CC-linked row.
+- 79 rows: 71 parity, 4 partial (all cosmetic, documented), 1 n/a,
+  **2 gap (blocker)** — E-8 and F-5, both owned by `onegate import`
+  (p7.config-import / p7.data-import, in flight).
+- All 16 harness-surfaced blockers closed by p7.parity-fixes; the corpus
+  (41 cases) replays clean: `python3 scripts/parity/replay.py` →
+  41/41 pass, 0 blocker diffs (docs/reports/parity-replay.md).
+- Fixes landed: production data plane wired through the Phase 4 routing
+  engine (registry + health + credential cache + quota gates in
+  cmd/onegate), resolve-error client envelopes, /v1/models listing,
+  Retry-After propagation, upstream_authentication/invalid_response
+  codes, 529→503 mapping, 429 status-wins classification, canonical
+  model echo, provider-model remap preserved upstream, stream truncation
+  detection, no [DONE] after error frames, anthropic max_tokens ingest
+  enforcement.

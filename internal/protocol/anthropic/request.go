@@ -19,6 +19,12 @@ func DecodeRequest(body []byte) (domain.Request, error) {
 	if err := json.Unmarshal(body, &w); err != nil {
 		return domain.Request{}, fmt.Errorf("anthropic: bad request body: %w", err)
 	}
+	// max_tokens is mandatory on the Anthropic wire
+	// [quirk:anthropic-max-tokens-required]: reject at ingest rather
+	// than silently substituting the encode-side default (checklist C-14).
+	if w.MaxTokens <= 0 {
+		return domain.Request{}, fmt.Errorf("anthropic: max_tokens is a required field")
+	}
 
 	req := domain.Request{
 		Model:  w.Model,

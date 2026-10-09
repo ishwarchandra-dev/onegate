@@ -165,18 +165,35 @@ func run() error {
 		AdminToken: os.Getenv("ONEGATE_ADMIN_TOKEN"),
 	})
 
-	// --- proxy: upstream client + fallback engine ---------------------
+	// --- proxy: upstream client + routing data plane (p7.parity-fixes) --
 	upstreamClient := client.New(client.TransportConfig{}, nil)
 	defer upstreamClient.CloseIdleConnections()
 
+	// The data plane routes through the Phase 4 engine: registry snapshot
+	// (models, scopes, policies, circuit health) + per-provider
+	// credentials from storage (TTL-cached, hot-path safe).
+	credentials := newProviderCredentials(store, providerCipher, 15*time.Second)
+	resolver := &routingResolver{
+		registry:    routingRegistry,
+		health:      healthTracker,
+		credentials: credentials,
+	}
+
+	quotaManager := ratelimit.NewQuotaManager(prices)
+
+	// qp is declared before the engine so the engine's OnUsage chain can
+	// debit quota through it (assigned right after the engine).
+	var qp *quotaProxy
+
 	fallbackEngine := fallback.NewEngine(fallback.Config{
-		Resolver: fallback.StaticResolver{
-			Targets: nil, // Dynamic routing engine lands in Phase 4
-		},
-		Client: upstreamClient,
-		Logger: logger,
+		Resolver: resolver,
+		Client:   upstreamClient,
+		Logger:   logger,
 		OnUsage: func(ue fallback.UsageEvent) {
 			usagePipeline.EnqueueEvent(ue.ToObservabilityEvent())
+			if qp != nil {
+				qp.onUsage(ue)
+			}
 			metricsRegistry.ObserveProxyRequest(
 				string(ue.Protocol),
 				ue.ProviderID,
@@ -189,7 +206,25 @@ func run() error {
 			}
 			metricsRegistry.SetUsagePipelineStats(usagePipeline.Stats())
 		},
+		OnTrace: func(tr fallback.Trace) {
+			// Feed the circuit breaker: every failed attempt trips a
+			// failure; the winning target confirms recovery.
+			for _, at := range tr.Attempts {
+				if at.Error != nil {
+					healthTracker.RecordFailure(at.ProviderID, at.Model, string(at.Error.Type))
+					continue
+				}
+				if tr.Completed {
+					healthTracker.RecordSuccess(at.ProviderID, at.Model)
+				}
+			}
+		},
 	})
+
+	// Quota enforcement wraps the engine (checklist C-6..C-9): RPM/TPM/
+	// concurrency/spend gates render 429 + Retry-After before any
+	// upstream work; actual usage debits after completion.
+	qp = newQuotaProxy(fallbackEngine, quotaManager)
 
 	// --- HTTP server (p3.http-server + p3.ingest-endpoints) ------------
 	// The router owns the middleware chain (request-id -> access-log
@@ -209,8 +244,9 @@ func run() error {
 		SchemaVersion: schemaVer,
 	})
 	ingest.Register(router.Mux(), ingest.Deps{
-		Auth:  verifier,
-		Proxy: fallbackEngine,
+		Auth:   verifier,
+		Proxy:  qp,
+		Models: &registryModelLister{registry: routingRegistry},
 	})
 
 	// --- management API (p6.api-impl + p6.auth-sessions) ---------------

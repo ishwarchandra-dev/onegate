@@ -246,8 +246,10 @@ def execute_step(step: dict, ctx: Ctx) -> dict:
     elif "body" in req:
         body_bytes = json.dumps(req["body"]).encode()
 
-    if "abort_after_ms" in req:
-        abort_request(ctx.base, method, path, headers, body_bytes, req["abort_after_ms"])
+    # abort_after_ms is a step-level directive (not forwarded upstream):
+    # send the request over a raw socket, then disconnect mid-flight.
+    if "abort_after_ms" in step:
+        abort_request(ctx.base, method, path, headers, body_bytes, step["abort_after_ms"])
         return {"aborted": True}
 
     url = ctx.base + path
@@ -573,6 +575,23 @@ def main() -> int:
         ctx = Ctx(keys={}, mock_a=base_a, mock_b=base_b, base=gw_base)
         seed_log: list[str] = []
         seed(corpus, ctx, seed_log)
+
+        # Settle: the routing watcher polls storage every second — wait
+        # until the REGISTRY (not storage) serves the full model catalog
+        # before replaying. /v1/models is registry-backed, so it is the
+        # authoritative signal that the data plane is live.
+        want_models = len(corpus["seed"]["models"])
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            try:
+                status, _, raw = http_json(
+                    "GET", ctx.base + "/v1/models",
+                    headers={"Authorization": f"Bearer {ctx.keys['primary']}"} if ctx.keys else {})
+                if status == 200 and len(json.loads(raw).get("data", [])) >= want_models:
+                    break
+            except Exception:
+                pass
+            time.sleep(0.25)
         print(f"seeded: {len(corpus['seed']['keys'])} keys, "
               f"{len(corpus['seed']['models'])} models, "
               f"{len(corpus['seed']['providers'])} providers")

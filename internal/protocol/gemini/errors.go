@@ -3,6 +3,7 @@ package gemini
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/ishwarchandra-dev/onegate/internal/domain"
@@ -30,7 +31,10 @@ func DecodeError(body []byte, status int) domain.GatewayError {
 		Message: eb.Error.Message,
 		Code:    eb.Error.Status,
 	}
-	if t, ok := typeFromString(eb.Error.Status); ok {
+	// The body status string wins — except that HTTP 429 always
+	// classifies as a rate limit (checklist C-17: status beats a generic
+	// body classification).
+	if t, ok := typeFromString(eb.Error.Status); ok && status != http.StatusTooManyRequests {
 		ge.Type = t
 	} else {
 		ge.Type = statusType(status)
@@ -87,6 +91,11 @@ func statusType(status int) domain.ErrorType {
 func retryable(t domain.ErrorType) bool {
 	switch t {
 	case domain.ErrRateLimit, domain.ErrOverloaded, domain.ErrAPI, domain.ErrTimeout:
+		return true
+	case domain.ErrAuthentication:
+		// The PROVIDER rejected the gateway's credential: hopeless for this
+		// target, but the next target (a different provider, different
+		// credential) may serve — retry across targets (checklist C-16).
 		return true
 	default:
 		return false

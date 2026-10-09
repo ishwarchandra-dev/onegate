@@ -362,6 +362,10 @@ type GatewayError struct {
 	Code    string    `json:"code,omitempty"` // machine-readable sub-code, e.g. "context_length_exceeded"
 	Message string    `json:"message"`
 	Param   string    `json:"param,omitempty"` // offending request field (OpenAI "param")
+	// RetryAfterSec is the Retry-After hint (seconds) for rate-limit and
+	// overload errors — from the provider's header or the gateway's own
+	// quota budget. Renderers emit it as the HTTP Retry-After header.
+	RetryAfterSec int `json:"retry_after_sec,omitempty"`
 	// Retryable marks errors the fallback engine may retry on another
 	// target (rate limits, overloads, transient 5xx). Never retry
 	// invalid-request or authentication errors.

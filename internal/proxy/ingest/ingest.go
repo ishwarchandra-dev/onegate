@@ -78,6 +78,10 @@ type Deps struct {
 
 	// MaxBodyBytes caps request bodies (default 32 MiB).
 	MaxBodyBytes int64
+
+	// Models, when set, enables GET /v1/models (checklist A-7). Nil keeps
+	// the endpoint unregistered.
+	Models ModelLister
 }
 
 // Register mounts the proxy endpoints on mux. Callers pass the server
@@ -103,6 +107,9 @@ func Register(mux *http.ServeMux, deps Deps) {
 	// suffix (":generateContent") shares a segment with the model, so the
 	// tail is matched broadly and parsed in the handler.
 	mux.HandleFunc("POST /v1beta/models/{target...}", deps.handleGemini)
+	if deps.Models != nil {
+		mux.HandleFunc("GET /v1/models", deps.handleModels)
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -54,12 +54,15 @@ nodes:
   - id: p7.parity-fixes
     title: "Parity fix cycle: resolve blockers surfaced by the harness"
     owner: go-engineer
-    status: pending
+    status: done
     depends_on: [p7.replay-harness]
     deliverables:
       - "Fixes with regression tests per checklist row"
     acceptance:
       - "Each fix links the checklist row it closes"
+    evidence:
+      - "Corpus replay 41/41 pass, 0 blocker diffs (docs/reports/parity-replay.md) — up from 9/41 baseline; every fix traces to checklist rows: A-7 (/v1/models), B-5 (Retry-After), C-6..C-12 (data plane wired: routingResolver + credential TTL cache + quotaProxy in cmd/onegate/adapters.go, layering-clean via fallback.ResolveError seam + routing.ClientError), C-16 (upstream_authentication + cross-target auth retry), C-17/C-18 (terminal remaps), C-23 (OnTrace health feedback), G-5/G-6/G-7 (canonical echo + provider remap), D-3/D-8 (no [DONE] after error; truncation detection), C-14 (max_tokens at ingest), C-19 (529->503), C-20 companion (429 status-wins)"
+      - "Tests updated to the corrected contracts: anthropic/gemini/openai error tests, routing integration (403/404 envelopes), ingest (max_tokens); full go test -race green (22 pkgs)"
 
   - id: p7.config-import
     title: "Import: omniroute.json → OneGate config + provider settings"

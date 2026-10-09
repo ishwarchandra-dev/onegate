@@ -216,7 +216,8 @@ func TestErrors(t *testing.T) {
 	// Authentication via gRPC status (HTTP 400 on Gemini).
 	body := load(t, "error_auth.json")
 	ge := DecodeError(body, 400)
-	if ge.Type != domain.ErrAuthentication || ge.Status != 400 || ge.Retryable || ge.Code != "UNAUTHENTICATED" {
+	// Provider-side auth failures retry across targets (checklist C-16).
+	if ge.Type != domain.ErrAuthentication || ge.Status != 400 || !ge.Retryable || ge.Code != "UNAUTHENTICATED" {
 		t.Fatalf("auth: %+v", ge)
 	}
 	re, status := EncodeError(ge)

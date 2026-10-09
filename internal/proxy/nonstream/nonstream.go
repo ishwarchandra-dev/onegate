@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ishwarchandra-dev/onegate/internal/domain"
@@ -64,7 +66,14 @@ type Call struct {
 	// RawBody is the raw client request payload.
 	RawBody []byte
 
-	// OverrideModel optionally replaces the model name in responses.
+	// ProviderModel is the upstream provider's model id for the target
+	// (canonical-to-provider remap, checklist G-7). Empty keeps the
+	// request's model.
+	ProviderModel string
+
+	// OverrideModel optionally replaces the model name in the CLIENT-facing
+	// response: the canonical model the client asked for (parity: OmniRoute
+	// echoed the requested model, never the provider's).
 	OverrideModel string
 }
 
@@ -125,10 +134,12 @@ func (e *Executor) Execute(ctx context.Context, w http.ResponseWriter, call Call
 		return nil, &Error{GErr: ge}
 	}
 
-	// 2. Prepare canonical request & encode for provider.
+	// 2. Prepare canonical request & encode for provider. The upstream
+	// sees the PROVIDER model (remap); the client sees the canonical one
+	// (OverrideModel, applied after decode).
 	req := call.Request
-	if call.OverrideModel != "" {
-		req.Model = call.OverrideModel
+	if call.ProviderModel != "" {
+		req.Model = call.ProviderModel
 	}
 
 	provBody, err := EncodeRequest(call.Provider.Protocol, req)
@@ -196,6 +207,7 @@ func (e *Executor) Execute(ctx context.Context, w http.ResponseWriter, call Call
 	// 5. Handle upstream HTTP error responses.
 	if resp.StatusCode >= 400 {
 		ge := DecodeError(call.Provider.Protocol, respBytes, resp.StatusCode)
+		applyRetryAfter(&ge, resp)
 		RenderError(w, call.ClientProto, ge)
 		return nil, &Error{GErr: ge}
 	}
@@ -203,13 +215,22 @@ func (e *Executor) Execute(ctx context.Context, w http.ResponseWriter, call Call
 	// 6. Decode provider response to canonical domain.Response.
 	canonResp, err := DecodeResponse(call.Provider.Protocol, respBytes)
 	if err != nil {
+		// Generic client-facing message: upstream internals never leak
+		// (checklist C-16 companion row); the decode detail stays in logs.
 		ge := domain.GatewayError{
 			Status:  http.StatusBadGateway,
 			Type:    domain.ErrAPI,
-			Message: fmt.Sprintf("decode upstream response: %v", err),
+			Code:    "upstream_invalid_response",
+			Message: "upstream returned an invalid response",
 		}
 		RenderError(w, call.ClientProto, ge)
 		return nil, &Error{GErr: ge, Cause: err}
+	}
+
+	// Cross-protocol responses have no provider created timestamp
+	// (checklist G-1/G-2): fill it at the gateway like OmniRoute did.
+	if canonResp.CreatedMS == 0 {
+		canonResp.CreatedMS = time.Now().UnixMilli()
 	}
 
 	if call.OverrideModel != "" {
@@ -243,6 +264,19 @@ func (e *Executor) Execute(ctx context.Context, w http.ResponseWriter, call Call
 	}, nil
 }
 
+// applyRetryAfter copies an upstream Retry-After header (seconds form)
+// onto the canonical error so renderers propagate it (checklist B-6).
+func applyRetryAfter(ge *domain.GatewayError, resp *http.Response) {
+	if resp == nil {
+		return
+	}
+	if v := resp.Header.Get("Retry-After"); v != "" {
+		if secs, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && secs > 0 {
+			ge.RetryAfterSec = secs
+		}
+	}
+}
+
 // RenderError serializes a canonical gateway error into the client protocol's
 // native envelope and writes it to the http.ResponseWriter.
 func RenderError(w http.ResponseWriter, protocol domain.ProviderProtocol, ge domain.GatewayError) {
@@ -260,6 +294,11 @@ func RenderError(w http.ResponseWriter, protocol domain.ProviderProtocol, ge dom
 		body, status = gemini.EncodeError(ge)
 	default:
 		body, status = openai.EncodeError(ge)
+	}
+	// Rate-limit and overload errors carry their backoff hint on the wire
+	// (checklist B-5/B-6): quota budgets and provider Retry-After both.
+	if ge.RetryAfterSec > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(ge.RetryAfterSec))
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)

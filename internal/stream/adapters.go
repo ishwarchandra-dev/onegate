@@ -90,3 +90,11 @@ func (g *geminiEncoder) Encode(ev domain.StreamEvent) ([]sse.Frame, bool, error)
 	}
 	return []sse.Frame{frame}, done, nil
 }
+
+// CreatedAtMS is optionally implemented by provider decoders that capture
+// a creation timestamp from the stream's first chunk (OpenAI `created`).
+// The pipeline re-seeds the client encoder with it so provider timestamps
+// pass through (checklist D-1).
+type CreatedAtMS interface {
+	CreatedAtMS() int64
+}

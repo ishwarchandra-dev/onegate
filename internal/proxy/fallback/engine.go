@@ -27,6 +27,9 @@ import (
 type Target struct {
 	Provider client.Provider
 	Model    string
+	// CostMultiplier is the target's pricing modifier in percent
+	// (100 = nominal). Flows into usage cost accounting.
+	CostMultiplier int
 }
 
 // TargetResolver decides the ordered list of provider targets to try for a call.
@@ -82,6 +85,7 @@ type UsageEvent struct {
 	Attempts       int
 	Completed      bool
 	Cancelled      bool
+	CostMultiplier int
 }
 
 // ToObservabilityEvent maps UsageEvent to observability.Event for the usage pipeline.
@@ -102,6 +106,7 @@ func (u UsageEvent) ToObservabilityEvent() observability.Event {
 		Duration:         u.Duration,
 		TTFT:             u.TTFT,
 		Attempts:         u.Attempts,
+		CostMultiplier:   u.CostMultiplier,
 	}
 }
 
@@ -206,14 +211,9 @@ func (e *Engine) Execute(ctx context.Context, w http.ResponseWriter, call ingest
 
 	targets, err := e.resolver.ResolveTargets(ctx, call)
 	if err != nil || len(targets) == 0 {
-		ge := domain.GatewayError{
-			Status:  http.StatusServiceUnavailable,
-			Type:    domain.ErrOverloaded,
-			Message: "no available upstream provider targets for model",
-		}
-		if err != nil {
-			ge.Message = fmt.Sprintf("resolve targets: %v", err)
-		}
+		// Routing failures render their own protocol-correct envelopes
+		// (checklist C-10..C-12, C-23) — never a generic 503 blob.
+		ge := resolveError(call, err)
 		usageEv.ErrorCode = string(ge.Type)
 		nonstream.RenderError(w, call.Protocol, ge)
 		return
@@ -246,6 +246,7 @@ func (e *Engine) Execute(ctx context.Context, w http.ResponseWriter, call ingest
 
 			usageEv.ModelServed = target.Model
 			usageEv.ProviderID = target.Provider.ID
+			usageEv.CostMultiplier = target.CostMultiplier
 			if summary != nil {
 				usageEv.Usage = summary.Usage
 				usageEv.TTFT = summary.FirstTokenAt
@@ -276,6 +277,7 @@ func (e *Engine) Execute(ctx context.Context, w http.ResponseWriter, call ingest
 
 			usageEv.ModelServed = target.Model
 			usageEv.ProviderID = target.Provider.ID
+			usageEv.CostMultiplier = target.CostMultiplier
 			if res != nil {
 				usageEv.Usage = res.Usage
 			}
@@ -291,8 +293,15 @@ func (e *Engine) Execute(ctx context.Context, w http.ResponseWriter, call ingest
 				return
 			}
 			if !attempt.Retried {
-				// Fatal or last target: write error response to client
-				commitRecorder(w, rec)
+				// Fatal or last target: write the error response to the
+				// client. The recorded provider-shaped body is discarded in
+				// favor of the terminal remap (checklist C-16/C-18: upstream
+				// auth -> 502 upstream_authentication, 5xx -> 502).
+				if attempt.Error != nil {
+					nonstream.RenderError(w, call.Protocol, terminalError(*attempt.Error))
+				} else {
+					commitRecorder(w, rec)
+				}
 				return
 			}
 		}
@@ -313,7 +322,8 @@ func (e *Engine) executeBufferedAttempt(
 		Provider:      target.Provider,
 		Request:       call.Request,
 		RawBody:       call.Body,
-		OverrideModel: target.Model,
+		ProviderModel: target.Model,       // upstream sees the provider model (G-7)
+		OverrideModel: call.Request.Model, // client sees the canonical model (parity)
 	}
 
 	res, err := e.nonstream.Execute(ctx, rec, callParams)
@@ -407,7 +417,7 @@ func (e *Engine) executeStreamAttempt(
 		)
 
 		if !canRetry {
-			nonstream.RenderError(w, call.Protocol, ge)
+			nonstream.RenderError(w, call.Protocol, terminalError(ge))
 		}
 		return nil, err
 	}
@@ -434,7 +444,7 @@ func (e *Engine) executeStreamAttempt(
 		)
 
 		if !canRetry {
-			nonstream.RenderError(w, call.Protocol, ge)
+			nonstream.RenderError(w, call.Protocol, terminalError(ge))
 		}
 		return nil, errors.New(ge.Message)
 	}
@@ -445,7 +455,7 @@ func (e *Engine) executeStreamAttempt(
 		ClientProto:   call.Protocol,
 		Upstream:      resp.Body,
 		Destination:   sw,
-		OverrideModel: target.Model,
+		OverrideModel: call.Request.Model, // echo the canonical model to the client (parity)
 	})
 
 	if err != nil {
@@ -467,7 +477,7 @@ func (e *Engine) executeStreamAttempt(
 		)
 
 		if !canRetry && !sw.Written() {
-			nonstream.RenderError(w, call.Protocol, ge)
+			nonstream.RenderError(w, call.Protocol, terminalError(ge))
 		}
 		return summary, err
 	}
@@ -481,6 +491,63 @@ func (e *Engine) executeStreamAttempt(
 		slog.Duration("ttft", summary.FirstTokenAt),
 	)
 	return summary, nil
+}
+
+// ResolveError carries a client-ready GatewayError out of a
+// TargetResolver (checklist C-10..C-12, C-23). Resolvers at the
+// composition layer wrap their domain-specific failures (routing
+// sentinels, credential outages) in this type; the engine stays free of
+// routing imports (layering contract, internal/proxy/proxy_test.go).
+type ResolveError struct {
+	GE domain.GatewayError
+}
+
+// Error implements error.
+func (e *ResolveError) Error() string { return e.GE.Message }
+
+// resolveError classifies a resolver failure for client rendering.
+// ResolveError renders as-is; unknown failures degrade to 503
+// overloaded_error, matching OmniRoute's posture for routing outages.
+func resolveError(_ ingest.Call, err error) domain.GatewayError {
+	if err == nil {
+		return domain.GatewayError{
+			Status:  http.StatusServiceUnavailable,
+			Type:    domain.ErrOverloaded,
+			Message: "no available upstream provider targets for model",
+		}
+	}
+	var re *ResolveError
+	if errors.As(err, &re) {
+		return re.GE
+	}
+	return domain.GatewayError{
+		Status:  http.StatusServiceUnavailable,
+		Type:    domain.ErrOverloaded,
+		Message: fmt.Sprintf("resolve targets: %v", err),
+	}
+}
+
+// terminalError remaps the last upstream error at fallback exhaustion
+// (checklist C-16/C-18): the client's key is fine, the provider failed —
+// upstream auth problems surface as gateway 502 upstream_authentication,
+// provider 5xx as 502 api_error (overload keeps its 503), and everything
+// else (rate limits, 4xx passthrough) renders as classified.
+func terminalError(ge domain.GatewayError) domain.GatewayError {
+	switch {
+	case ge.Status == http.StatusUnauthorized || ge.Status == http.StatusForbidden:
+		return domain.GatewayError{
+			Status:        http.StatusBadGateway,
+			Type:          domain.ErrAPI,
+			Code:          "upstream_authentication",
+			Message:       ge.Message,
+			RetryAfterSec: ge.RetryAfterSec,
+		}
+	case ge.Status >= 500 && ge.Type != domain.ErrOverloaded:
+		ge.Status = http.StatusBadGateway
+		return ge
+	default:
+		return ge
+	}
 }
 
 func extractGatewayError(err error, defaultStatus int) domain.GatewayError {

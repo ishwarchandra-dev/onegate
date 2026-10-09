@@ -30,10 +30,22 @@ func DecodeError(body []byte, status int) domain.GatewayError {
 		Status:  status,
 		Message: eb.Error.Message,
 	}
-	if t, ok := typeFromString(eb.Error.Type); ok {
+	// The body type string wins — except that HTTP 429 always
+	// classifies as a rate limit (checklist C-17: status beats a
+	// generic body type).
+	if t, ok := typeFromString(eb.Error.Type); ok && status != http.StatusTooManyRequests {
 		ge.Type = t
 	} else {
 		ge.Type = statusType(status)
+	}
+	// Anthropic's 529 overload renders to clients as 503 overloaded_error
+	// (checklist C-19). The type string from
+	// the body ("overloaded_error") is preserved when present.
+	if status == 529 {
+		ge.Status = http.StatusServiceUnavailable
+		if ge.Type != domain.ErrOverloaded {
+			ge.Type = domain.ErrOverloaded
+		}
 	}
 	ge.Retryable = retryable(ge.Type)
 	return ge
@@ -87,6 +99,11 @@ func statusType(status int) domain.ErrorType {
 func retryable(t domain.ErrorType) bool {
 	switch t {
 	case domain.ErrRateLimit, domain.ErrOverloaded, domain.ErrAPI, domain.ErrTimeout:
+		return true
+	case domain.ErrAuthentication:
+		// The PROVIDER rejected the gateway's credential: hopeless for this
+		// target, but the next target (a different provider, different
+		// credential) may serve — retry across targets (checklist C-16).
 		return true
 	default:
 		return false

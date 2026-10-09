@@ -29,8 +29,10 @@ func DecodeError(body []byte, status int) domain.GatewayError {
 		ge.Code = s
 	}
 
-	// Explicit type string, when it names a canonical type, wins.
-	if t, ok := errorTypeFromString(we.Type); ok {
+	// Explicit type string, when it names a canonical type, wins — except
+	// that HTTP 429 always classifies as a rate limit (checklist C-17:
+	// status beats a generic body type; Azure subtypes handled below).
+	if t, ok := errorTypeFromString(we.Type); ok && status != http.StatusTooManyRequests {
 		ge.Type = t
 	} else {
 		ge.Type = errorTypeFromStatus(status)
@@ -107,6 +109,11 @@ func errorTypeFromStatus(status int) domain.ErrorType {
 func retryableType(t domain.ErrorType) bool {
 	switch t {
 	case domain.ErrRateLimit, domain.ErrOverloaded, domain.ErrAPI, domain.ErrTimeout:
+		return true
+	case domain.ErrAuthentication:
+		// The PROVIDER rejected the gateway's credential: hopeless for this
+		// target, but the next target (a different provider, different
+		// credential) may serve — retry across targets (checklist C-16).
 		return true
 	default:
 		return false

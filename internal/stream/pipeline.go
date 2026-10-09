@@ -113,6 +113,7 @@ func Execute(ctx context.Context, cfg Config) (*Summary, error) {
 	if err != nil {
 		return nil, err
 	}
+	encoderReady := false
 
 	reader := NewReader(cfg.Upstream)
 	defer func() {
@@ -120,8 +121,10 @@ func Execute(ctx context.Context, cfg Config) (*Summary, error) {
 	}()
 
 	var (
-		streamDone bool
-		seenDone   bool
+		streamDone   bool
+		seenDone     bool
+		sawFinish    bool // provider signaled completion (finish/message_stop)
+		emittedError bool // an in-stream error event was sent to the client
 	)
 
 	for {
@@ -167,6 +170,7 @@ func Execute(ctx context.Context, cfg Config) (*Summary, error) {
 		// Check for OpenAI-style [DONE] frame.
 		if sse.IsDone(frame) {
 			seenDone = true
+			sawFinish = true // provider signaled completion explicitly
 			break
 		}
 
@@ -183,6 +187,17 @@ func Execute(ctx context.Context, cfg Config) (*Summary, error) {
 		}
 
 		for _, ev := range events {
+			if !encoderReady {
+				if src, ok := decoder.(CreatedAtMS); ok {
+					if ts := src.CreatedAtMS(); ts > 0 {
+						enc2, eerr := NewEncoder(cfg.ClientProto, ts)
+						if eerr == nil {
+							encoder = enc2
+						}
+					}
+				}
+				encoderReady = true
+			}
 			if cfg.OverrideModel != "" && ev.Model != "" {
 				ev.Model = cfg.OverrideModel
 			}
@@ -198,6 +213,12 @@ func Execute(ctx context.Context, cfg Config) (*Summary, error) {
 			if ev.FinishReason != "" {
 				summary.FinishReason = ev.FinishReason
 			}
+			if ev.FinishReason != "" || ev.Type == domain.EventMessageStop || ev.Type == domain.EventError {
+				sawFinish = true
+			}
+			if ev.Type == domain.EventError {
+				emittedError = true
+			}
 			summary.EventsCount++
 
 			if cfg.OnEvent != nil {
@@ -211,6 +232,7 @@ func Execute(ctx context.Context, cfg Config) (*Summary, error) {
 					return summary, encErr
 				}
 				emitMidStreamError(cfg.Destination, encoder, encErr)
+				emittedError = true
 				summary.Duration = time.Since(start)
 				summary.BytesOut = cfg.Destination.BytesWritten()
 				return summary, encErr
@@ -252,6 +274,24 @@ func Execute(ctx context.Context, cfg Config) (*Summary, error) {
 		return summary, ctx.Err()
 	}
 
+	// Premature EOF: the provider ended the stream without a terminal
+	// signal (no finish reason, no [DONE], no message_stop). Truncation is
+	// a mid-stream failure (checklist D-8): after the first byte there is
+	// no retry — the client gets a native error event, never a silent
+	// half-answer.
+	if !streamDone && !sawFinish {
+		truncErr := errors.New("stream: upstream ended before completion")
+		if !cfg.Destination.Written() {
+			summary.Duration = time.Since(start)
+			return summary, truncErr
+		}
+		emitMidStreamError(cfg.Destination, encoder, truncErr)
+		emittedError = true
+		summary.Duration = time.Since(start)
+		summary.BytesOut = cfg.Destination.BytesWritten()
+		return summary, truncErr
+	}
+
 	// Emit trailing canonical events if decoder implements Finisher.
 	if finisher, ok := decoder.(Finisher); ok && !streamDone {
 		trailing := finisher.Finish()
@@ -288,7 +328,9 @@ func Execute(ctx context.Context, cfg Config) (*Summary, error) {
 	}
 
 	// If client protocol is OpenAI and [DONE] hasn't been emitted, emit it.
-	if cfg.ClientProto == domain.ProtocolOpenAI && !seenDone {
+	// Never after an error event: the error frame terminates the stream
+	// (checklist D-3/D-8).
+	if cfg.ClientProto == domain.ProtocolOpenAI && !seenDone && !emittedError {
 		_ = cfg.Destination.WriteFrame(sse.Frame{Data: "[DONE]"})
 		summary.FramesOut++
 	}

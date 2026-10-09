@@ -34,11 +34,12 @@ func NewRateLimitError(limitType string, message string, retryAfter int) *RateLi
 		Message:    message,
 		RetryAfter: retryAfter,
 		GErr: domain.GatewayError{
-			Status:    http.StatusTooManyRequests,
-			Type:      domain.ErrRateLimit,
-			Code:      limitType + "_limit_exceeded",
-			Message:   message,
-			Retryable: true,
+			Status:        http.StatusTooManyRequests,
+			Type:          domain.ErrRateLimit,
+			Code:          limitType + "_limit_exceeded",
+			Message:       message,
+			RetryAfterSec: retryAfter,
+			Retryable:     true,
 		},
 	}
 }

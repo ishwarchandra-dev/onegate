@@ -35,6 +35,10 @@ func NewStreamDecoder() *StreamDecoder {
 // CreatedMS reports the created timestamp captured from the first chunk.
 func (d *StreamDecoder) CreatedMS() int64 { return d.createdMS }
 
+// CreatedAtMS satisfies stream.CreatedAtMS: the created timestamp captured
+// from the first chunk (unix ms), for encoder seeding.
+func (d *StreamDecoder) CreatedAtMS() int64 { return d.createdMS }
+
 // Decode converts one chunk payload into zero or more canonical events.
 func (d *StreamDecoder) Decode(data []byte) ([]domain.StreamEvent, error) {
 	var chunk chatChunk
@@ -260,7 +264,9 @@ func (e *StreamEncoder) Encode(ev domain.StreamEvent) (frames []sse.Frame, done 
 			Type:    errorTypeString(ev.Error),
 			Code:    ev.Error.Code,
 		}})
-		return []sse.Frame{{Data: string(body)}, {Data: "[DONE]"}}, true, nil
+		// The error frame terminates the stream: no [DONE] sentinel after
+		// an error (checklist D-3/D-8) — OmniRoute never sent one either.
+		return []sse.Frame{{Data: string(body)}}, true, nil
 
 	default:
 		return nil, false, fmt.Errorf("openai: unknown stream event %q", ev.Type)

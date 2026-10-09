@@ -245,14 +245,15 @@ func TestStreamThinkingEventByEvent(t *testing.T) {
 }
 
 func TestErrors(t *testing.T) {
-	// Overloaded (529).
+	// Overloaded (529): remapped to 503 overloaded_error for clients
+	// (checklist C-19, p7.parity-fixes).
 	body := load(t, "error_overloaded.json")
 	ge := DecodeError(body, 529)
-	if ge.Type != domain.ErrOverloaded || ge.Status != 529 || !ge.Retryable {
+	if ge.Type != domain.ErrOverloaded || ge.Status != 503 || !ge.Retryable {
 		t.Fatalf("overloaded: %+v", ge)
 	}
 	re, status := EncodeError(ge)
-	if status != 529 {
+	if status != 503 {
 		t.Fatalf("status: %d", status)
 	}
 	if msg := golden.Diff(body, re); msg != "" {

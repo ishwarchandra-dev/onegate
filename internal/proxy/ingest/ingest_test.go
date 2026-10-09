@@ -128,7 +128,7 @@ func TestRoutingTable(t *testing.T) {
 	}
 
 	resp = post(t, srv.URL+"/v1/messages", "ogk-x", "",
-		`{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"hi"}]}`)
+		`{"model":"claude-3-5-sonnet","max_tokens":32,"messages":[{"role":"user","content":"hi"}]}`)
 	if resp.StatusCode != 200 {
 		t.Fatalf("anthropic: %d", resp.StatusCode)
 	}
@@ -320,7 +320,7 @@ func TestCredentialExtraction(t *testing.T) {
 	}
 
 	// Anthropic: x-api-key primary.
-	req2, _ := http.NewRequest("POST", srv.URL+"/v1/messages", strings.NewReader(`{"model":"m","messages":[]}`))
+	req2, _ := http.NewRequest("POST", srv.URL+"/v1/messages", strings.NewReader(`{"model":"m","max_tokens":32,"messages":[]}`))
 	req2.Header.Set("x-api-key", "ogk-c")
 	if resp, err := http.DefaultClient.Do(req2); err != nil {
 		t.Fatal(err)

@@ -32,8 +32,8 @@ func TestParseScenario(t *testing.T) {
 		{"sc-429", scStatus, true},
 		{"sc-429rr", scStatus, true},
 		{"sc-599", scStatus, true},
-		{"sc-399", scNone, false},   // below 400
-		{"sc-5000", scNone, false},  // not 3 digits
+		{"sc-399", scNone, false},  // below 400
+		{"sc-5000", scNone, false}, // not 3 digits
 		{"sc-ctxlen", scCtxLen, true},
 		{"sc-stall", scStall, true},
 		{"sc-delay-250", scDelay, true},

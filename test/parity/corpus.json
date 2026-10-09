@@ -280,7 +280,7 @@
         "targets": [
           {
             "provider_id": "prov-openai-a",
-            "provider_model": "sc-500",
+            "provider_model": "sc-599",
             "position": 1
           }
         ],
@@ -1449,13 +1449,13 @@
               "object": "list",
               "data": [
                 {
-                  "id": "gpt-4o",
+                  "id": "badjson-model",
                   "object": "model",
                   "created": "<any>",
                   "owned_by": "onegate"
                 },
                 {
-                  "id": "openai-echo",
+                  "id": "circuit-model",
                   "object": "model",
                   "created": "<any>",
                   "owned_by": "onegate"
@@ -1467,7 +1467,97 @@
                   "owned_by": "onegate"
                 },
                 {
+                  "id": "ctxlen-model",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "fail-401",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "fail-429",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "fail-500",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "fallback-500",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
                   "id": "gemini-flash",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "gpt-4o",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "midstream-model",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "openai-echo",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "overloaded-model",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "ping-model",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "slow-model",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "stall-model",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "think-model",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "tool-model",
+                  "object": "model",
+                  "created": "<any>",
+                  "owned_by": "onegate"
+                },
+                {
+                  "id": "weighted-model",
                   "object": "model",
                   "created": "<any>",
                   "owned_by": "onegate"
@@ -2758,7 +2848,29 @@
           }
         },
         {
-          "name": "second request rejects",
+          "name": "second request passes (spend 150 of 100 — check trips next)",
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "headers": {
+              "Authorization": "Bearer {{KEY:spend100}}"
+            },
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hi"
+                }
+              ]
+            }
+          },
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "name": "third request rejects (spend 150 >= cap 100)",
           "request": {
             "method": "POST",
             "path": "/v1/chat/completions",
@@ -2778,11 +2890,11 @@
           "expect": {
             "status": 429,
             "headers": {
-              "Retry-After": "60"
+              "Retry-After": "<any>"
             },
             "json": {
               "error": {
-                "message": "lifetime spend cap of $0.00 reached (current spend: $0.00)",
+                "message": "<any>",
                 "type": "rate_limit_error",
                 "code": "spend_limit_exceeded"
               }

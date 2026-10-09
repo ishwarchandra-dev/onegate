@@ -273,7 +273,9 @@ func (r *testTargetResolver) ResolveTargets(ctx context.Context, call ingest.Cal
 	}
 	targets, err := r.registry.DecideTargets(req, r.health)
 	if err != nil {
-		return nil, err
+		// Wrap like the production adapter does (cmd/onegate/adapters.go):
+		// routing sentinels render as their client envelopes.
+		return nil, &fallback.ResolveError{GE: routing.ClientError(req.Model, err)}
 	}
 
 	fbTargets := make([]fallback.Target, 0, len(targets))
@@ -590,9 +592,11 @@ func TestIntegration_KeyScopes_ModelAndProviderFiltering(t *testing.T) {
 		t.Errorf("expected 200 OK for allowed model, got %d", code)
 	}
 
-	// 2. Key A requesting disallowed model "claude-3-5-sonnet" -> 503 Service Unavailable (resolve targets denies scope)
-	if code := sendReq(rawKeyModelRestricted, "claude-3-5-sonnet"); code != http.StatusServiceUnavailable {
-		t.Errorf("expected 503 for denied model scope, got %d", code)
+	// 2. Key A requesting disallowed model "claude-3-5-sonnet" -> 403
+	// permission_error (scope denial renders its own envelope — checklist
+	// C-11, p7.parity-fixes; previously a generic 503).
+	if code := sendReq(rawKeyModelRestricted, "claude-3-5-sonnet"); code != http.StatusForbidden {
+		t.Errorf("expected 403 for denied model scope, got %d", code)
 	}
 
 	// 3. Key B requesting "gpt-4o" with prov-fallback allowed:
@@ -753,8 +757,10 @@ func TestIntegration_HotReload_LiveUpdate(t *testing.T) {
 		t.Fatalf("Do: %v", err)
 	}
 	resp1.Body.Close()
-	if resp1.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("expected 503 before reload, got %d", resp1.StatusCode)
+	// Unknown model before the reload -> 404 not_found_error (checklist
+	// C-10, p7.parity-fixes; previously a generic 503).
+	if resp1.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404 before reload, got %d", resp1.StatusCode)
 	}
 
 	// Trigger hot-reload
