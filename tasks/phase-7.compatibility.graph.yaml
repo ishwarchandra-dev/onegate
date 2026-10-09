@@ -13,12 +13,15 @@ nodes:
   - id: p7.parity-checklist
     title: "Full parity checklist from OmniRoute v3.8.52 source & traffic captures"
     owner: compatibility-auditor
-    status: pending
+    status: done
     depends_on: [p6.gate]
     deliverables:
       - "docs/compat/checklist.md: endpoints, headers, errors, events, config, CLI"
     acceptance:
       - "Every row has: legacy behavior, OneGate status, evidence link"
+    evidence:
+      - "docs/compat/checklist.md — 79 rows across 7 areas (A endpoints, B headers, C errors top-20, D stream events, E config, F CLI, G cross-protocol); every row carries legacy behavior + status + evidence link (test/fixture/code/corpus CC-nn)"
+      - "16 blocker gaps catalogued, all traced to two root causes: unwired data plane (StaticResolver in cmd/onegate) and missing surfaces (/v1/models, quota Retry-After, upstream_authentication code, import CLI)"
 
   - id: p7.capture-corpus
     title: "Captured traffic corpus (anonymized) for replay diffing"
