@@ -6,5 +6,6 @@ export default [
     route("providers", "routes/providers.tsx"),
     route("routing", "routes/routing.tsx"),
     route("keys", "routes/keys.tsx"),
+    route("usage", "routes/usage.tsx"),
   ]),
 ] satisfies RouteConfig
