@@ -64,26 +64,26 @@ OpenAI `{"error":{message,type,code,param?}}`, Anthropic
 | Row | Legacy behavior | Status | Evidence |
 | --- | --- | --- | --- |
 | C-1 | Missing credential → 401 `authentication_error`, code `missing_api_key`, message "missing API key" | parity | `internal/proxy/ingest/ingest.go` authenticate; corpus CC-16 |
-| C-2 | Malformed key (not `ogk-…` shape) → 401 code `invalid_api_key`, "invalid API key" | parity | ingest authenticate; corpus CC-16 |
-| C-3 | Well-formed but unknown → 401 code `invalid_api_key`, "invalid API key" (same as C-2 — indistinguishable by design) | parity | ingest; corpus CC-16 |
+| C-2 | Malformed key (not `ogk-…` shape) → 401 code `invalid_api_key`, "invalid API key" | parity | ingest authenticate; corpus CC-36 |
+| C-3 | Well-formed but unknown → 401 code `invalid_api_key`, "invalid API key" (same as C-2 — indistinguishable by design) | parity | ingest; corpus CC-37 |
 | C-4 | Revoked key → 403 `permission_error`, code `key_revoked`, "API key has been revoked" | parity | ingest; corpus CC-19 |
 | C-5 | Expired key → 403 `permission_error`, code `key_expired`, "API key has expired" | parity | ingest; corpus CC-20 |
 | C-6 | RPM limit exceeded → 429 `rate_limit_error`, code `rpm_limit_exceeded`, `Retry-After` set | gap (blocker) | `internal/ratelimit/quota.go` implements; not wired into `cmd/onegate` data plane (StaticResolver). Fix p7.parity-fixes; corpus CC-17 |
-| C-7 | TPM limit exceeded → 429 code `tpm_limit_exceeded` | gap (blocker) | same as C-6; corpus CC-17 |
-| C-8 | Spend cap exceeded → 429 code `spend_limit_exceeded` | gap (blocker) | same as C-6; corpus CC-17 |
-| C-9 | Concurrency cap exceeded → 429 code `concurrency_limit_exceeded` | gap (blocker) | same as C-6; corpus CC-17 |
+| C-7 | TPM limit exceeded → 429 code `tpm_limit_exceeded` | gap (blocker) | same as C-6; corpus CC-38 |
+| C-8 | Spend cap exceeded → 429 code `spend_limit_exceeded` | gap (blocker) | same as C-6; corpus CC-39 |
+| C-9 | Concurrency cap exceeded → 429 code `concurrency_limit_exceeded` | gap (blocker) | same as C-6; corpus CC-40 |
 | C-10 | Unknown model/alias → 404 `not_found_error`, message "model not found: <id>" | gap (blocker) | engine currently renders resolve failures as 503 `overloaded` (`internal/proxy/fallback/engine.go` Execute). Fix p7.parity-fixes; corpus CC-21 |
 | C-11 | Model denied by key scope → 403 `permission_error`, "model not allowed by virtual key scope" | gap (blocker) | same resolve-path defect as C-10; corpus CC-22 |
 | C-12 | All provider targets denied by scope → 403 `permission_error` | gap (blocker) | same; corpus CC-23 |
 | C-13 | Invalid JSON body → 400 `invalid_request_error` | parity | ingest serve; corpus CC-24 |
 | C-14 | Missing required fields (e.g. Anthropic without `max_tokens`) → 400 with adapter message | parity | `quirk:anthropic-max-tokens-required`; `internal/protocol/anthropic/request.go`; corpus CC-25 |
 | C-15 | Body > 32 MiB → 413 `request_too_large`, code `request_body_too_large` | parity | ingest readBody; corpus CC-26 |
-| C-16 | Upstream 401 (bad provider key) → retried on next target; exhausted → 502 `api_error` with code `upstream_authentication` | gap (blocker) | provider-error mapping lacks the `upstream_authentication` code today (`internal/proxy/fallback/engine.go` terminal render). Fix p7.parity-fixes; corpus CC-27 |
+| C-16 | Upstream 401 (bad provider key) → retried on next target; exhausted → 502 `api_error` with code `upstream_authentication` | gap (blocker) | provider-error mapping lacks the `upstream_authentication` code today (`internal/proxy/fallback/engine.go` terminal render). Fix p7.parity-fixes; corpus CC-27, CC-31 |
 | C-17 | Upstream 429 → fallback to next target; exhausted → 429 in client envelope with `Retry-After` preserved | parity (pending data-plane wiring) | `internal/proxy/fallback/engine_test.go`; corpus CC-18 |
 | C-18 | Upstream 5xx → fallback; exhausted → 502 `api_error` | parity (pending data-plane wiring) | engine_test; corpus CC-28 |
 | C-19 | Anthropic-style 529 overloaded → mapped to 503 `overloaded_error` (client envelope), retried across targets | parity | `internal/protocol/anthropic/errors.go`; corpus CC-29 |
 | C-20 | Context-length exceeded → 400 `invalid_request_error`, code `context_length_exceeded` (provider code passthrough) | parity | adapter DecodeError passthrough; corpus CC-30 |
-| C-21 | Gateway timeout (upstream stall) → 504 `timeout_error` | parity | `internal/proxy/client/client.go` timeouts; corpus CC-31 |
+| C-21 | Gateway timeout (upstream stall) → 504 `timeout_error` | parity | `internal/proxy/client/client_test.go` timeout classification (120 s default budget is too long for replay; same code path exercised by CC-31) |
 | C-22 | Client disconnect: upstream cancelled, usage recorded as `cancelled` (499 internal), no response written | parity | `internal/proxy/fallback/cancellation_test.go` |
 | C-23 | All targets unhealthy (circuit open) → 503 `overloaded_error`, "no healthy targets available" | gap (blocker) | health tracker not wired to data plane; fix p7.parity-fixes; corpus CC-32 |
 | C-24 | Credential extraction per protocol: OpenAI `Authorization: Bearer` (fallback `x-api-key`), Anthropic `x-api-key` (fallback Bearer), Gemini `x-goog-api-key` then `?key=` | parity | `internal/proxy/ingest/ingest.go` handlers; corpus CC-16 |

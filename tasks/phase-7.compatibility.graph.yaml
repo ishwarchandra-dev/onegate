@@ -26,12 +26,16 @@ nodes:
   - id: p7.capture-corpus
     title: "Captured traffic corpus (anonymized) for replay diffing"
     owner: compatibility-auditor
-    status: pending
+    status: done
     depends_on: [p7.parity-checklist]
     deliverables:
       - "Fixture corpus: requests/responses/SSE transcripts per protocol"
     acceptance:
       - "Corpus covers top-20 error cases and all stream event orders"
+    evidence:
+      - "test/parity/corpus.json — 41 cases (CC-01..CC-41), 18 seeded models, 10 seeded keys, 4 providers; expected transcripts authored from the documented wire contracts (protocol-mappings.md, adapter codecs)"
+      - "internal/mockprovider/scenarios.go — model-driven deterministic upstream scenarios (sc-500/401/429rr/529/ctxlen/stall/delay/midstream/badjson/toolstream/thinkstream/ping); 12 unit tests in scenarios_test.go"
+      - "test/parity/README.md — coverage matrix: top-20 error rows C-1..C-23 all mapped, stream orders D-1..D-10 all mapped"
 
   - id: p7.replay-harness
     title: "Replay diff harness: corpus → OneGate vs OmniRoute, byte/event diff"

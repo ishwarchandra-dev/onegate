@@ -113,6 +113,16 @@ func handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		model = "gpt-4o"
 	}
 
+	if sc, ok := parseScenario(model); ok {
+		if req.Stream {
+			if applyStreamScenario(w, r, "openai", sc) {
+				return
+			}
+		} else if applyScenario(w, r, "openai", model, sc) {
+			return
+		}
+	}
+
 	echoText := "Hello from mock OpenAI"
 	if custom := r.Header.Get("X-Mock-Echo"); custom != "" {
 		echoText = custom
@@ -185,10 +195,6 @@ func handleAnthropic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if checkMockOverrides(w, r, "anthropic") {
-		return
-	}
-
 	var req struct {
 		Model  string `json:"model"`
 		Stream bool   `json:"stream"`
@@ -198,6 +204,20 @@ func handleAnthropic(w http.ResponseWriter, r *http.Request) {
 	model := req.Model
 	if model == "" {
 		model = "claude-3-5-sonnet-20241022"
+	}
+
+	if sc, ok := parseScenario(model); ok {
+		if req.Stream {
+			if applyStreamScenario(w, r, "anthropic", sc) {
+				return
+			}
+		} else if applyScenario(w, r, "anthropic", model, sc) {
+			return
+		}
+	}
+
+	if checkMockOverrides(w, r, "anthropic") {
+		return
 	}
 
 	echoText := "Hello from mock Anthropic"
@@ -276,13 +296,19 @@ func handleGeminiNonStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if checkMockOverrides(w, r, "gemini") {
-		return
-	}
-
-	model := r.PathValue("model")
+	model := modelFromTarget(r.PathValue("target"))
 	if model == "" {
 		model = "gemini-1.5-pro"
+	}
+
+	if sc, ok := parseScenario(model); ok {
+		if applyScenario(w, r, "gemini", model, sc) {
+			return
+		}
+	}
+
+	if checkMockOverrides(w, r, "gemini") {
+		return
 	}
 
 	echoText := "Hello from mock Gemini"
@@ -323,13 +349,19 @@ func handleGeminiStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if checkMockOverrides(w, r, "gemini") {
-		return
-	}
-
-	model := r.PathValue("model")
+	model := modelFromTarget(r.PathValue("target"))
 	if model == "" {
 		model = "gemini-1.5-pro"
+	}
+
+	if sc, ok := parseScenario(model); ok {
+		if applyStreamScenario(w, r, "gemini", sc) {
+			return
+		}
+	}
+
+	if checkMockOverrides(w, r, "gemini") {
+		return
 	}
 
 	echoText := "Hello from mock Gemini"

@@ -1,0 +1,988 @@
+{
+  "$schema": "onegate-parity-corpus-1",
+  "description": "Captured OmniRoute v3.8.52 traffic (anonymized) for replay diffing against OneGate. Each case replays a client exchange and asserts the wire-level response OmniRoute produced. CC ids are cited from docs/compat/checklist.md. The '<any>' sentinel matches any JSON value at that position. Expected bodies are normalized: volatile fields (ids, timestamps) are either deterministic mock values or masked with '<any>'.",
+  "notes": [
+    "Seed placeholders: {{KEY:<id>}} substitutes the raw virtual key captured at mint; {{MOCK_A}}/{{MOCK_B}} are mock provider base URLs.",
+    "SSE expectations compare (event, data) pairs in order. data values that parse as JSON deep-compare with '<any>' wildcards; data_raw compares the raw string.",
+    "post checks query the management API and assert a subset of the first matching record; retry_ms bounds the wait for the async usage pipeline.",
+    "severity classifies any diff: blocker rows must match exactly; cosmetic rows tolerate the listed deviations (each has a divergence note in the checklist)."
+  ],
+  "seed": {
+    "providers": [
+      {"id": "prov-openai-a", "name": "Parity OpenAI A", "protocol": "openai", "base_url": "{{MOCK_A}}", "api_key": "sk-mock-a", "enabled": true},
+      {"id": "prov-openai-b", "name": "Parity OpenAI B", "protocol": "openai", "base_url": "{{MOCK_B}}", "api_key": "sk-mock-b", "enabled": true},
+      {"id": "prov-anthropic", "name": "Parity Anthropic", "protocol": "anthropic", "base_url": "{{MOCK_A}}", "api_key": "sk-ant-mock", "enabled": true},
+      {"id": "prov-gemini", "name": "Parity Gemini", "protocol": "gemini", "base_url": "{{MOCK_A}}", "api_key": "gem-mock", "enabled": true}
+    ],
+    "models": [
+      {"id": "gpt-4o", "targets": [{"provider_id": "prov-openai-a", "provider_model": "mock-echo", "position": 1}, {"provider_id": "prov-openai-b", "provider_model": "mock-echo", "position": 2}], "policy": "ordered"},
+      {"id": "openai-echo", "aliases": ["echo-alias"], "targets": [{"provider_id": "prov-openai-a", "provider_model": "mock-echo", "position": 1}], "policy": "ordered"},
+      {"id": "claude-sonnet", "targets": [{"provider_id": "prov-anthropic", "provider_model": "claude-3-5-sonnet-latest", "position": 1}], "policy": "ordered"},
+      {"id": "gemini-flash", "targets": [{"provider_id": "prov-gemini", "provider_model": "gemini-1.5-flash", "position": 1}], "policy": "ordered"},
+      {"id": "fallback-500", "targets": [{"provider_id": "prov-openai-a", "provider_model": "sc-500", "position": 1}, {"provider_id": "prov-openai-b", "provider_model": "mock-echo", "position": 2}], "policy": "ordered"},
+      {"id": "fail-500", "targets": [{"provider_id": "prov-openai-a", "provider_model": "sc-500", "position": 1}, {"provider_id": "prov-openai-b", "provider_model": "sc-500", "position": 2}], "policy": "ordered"},
+      {"id": "fail-401", "targets": [{"provider_id": "prov-openai-a", "provider_model": "sc-401", "position": 1}, {"provider_id": "prov-openai-b", "provider_model": "sc-401", "position": 2}], "policy": "ordered"},
+      {"id": "fail-429", "targets": [{"provider_id": "prov-openai-a", "provider_model": "sc-429rr", "position": 1}, {"provider_id": "prov-openai-b", "provider_model": "sc-429rr", "position": 2}], "policy": "ordered"},
+      {"id": "overloaded-model", "targets": [{"provider_id": "prov-anthropic", "provider_model": "sc-529", "position": 1}], "policy": "ordered"},
+      {"id": "ctxlen-model", "targets": [{"provider_id": "prov-openai-a", "provider_model": "sc-ctxlen", "position": 1}], "policy": "ordered"},
+      {"id": "slow-model", "targets": [{"provider_id": "prov-openai-a", "provider_model": "sc-delay-1500", "position": 1}], "policy": "ordered"},
+      {"id": "midstream-model", "targets": [{"provider_id": "prov-openai-a", "provider_model": "sc-midstream", "position": 1}], "policy": "ordered"},
+      {"id": "badjson-model", "targets": [{"provider_id": "prov-openai-a", "provider_model": "sc-badjson", "position": 1}], "policy": "ordered"},
+      {"id": "tool-model", "targets": [{"provider_id": "prov-openai-a", "provider_model": "sc-toolstream", "position": 1}], "policy": "ordered"},
+      {"id": "think-model", "targets": [{"provider_id": "prov-anthropic", "provider_model": "sc-thinkstream", "position": 1}], "policy": "ordered"},
+      {"id": "ping-model", "targets": [{"provider_id": "prov-anthropic", "provider_model": "sc-ping", "position": 1}], "policy": "ordered"},
+      {"id": "weighted-model", "targets": [{"provider_id": "prov-openai-a", "provider_model": "mock-echo", "position": 1}, {"provider_id": "prov-openai-b", "provider_model": "mock-echo", "position": 2, "weight": 9}], "policy": "weighted"},
+      {"id": "stall-model", "targets": [{"provider_id": "prov-openai-a", "provider_model": "sc-stall", "position": 1}], "policy": "ordered"}
+    ],
+    "keys": [
+      {"id": "primary", "name": "parity-primary"},
+      {"id": "scoped-model", "name": "parity-scoped-model", "scopes": {"allowed_models": ["gpt-4o"]}},
+      {"id": "scoped-provider", "name": "parity-scoped-provider", "scopes": {"allowed_providers": ["prov-openai-a"]}},
+      {"id": "revoked", "name": "parity-revoked", "revoke": true},
+      {"id": "expired", "name": "parity-expired", "expires_at_ms": "{{NOW-3600000}}"},
+      {"id": "rpm2", "name": "parity-rpm2", "limits": {"rpm": 2}},
+      {"id": "tpm10", "name": "parity-tpm10", "limits": {"tpm": 10}},
+      {"id": "spend100", "name": "parity-spend100", "limits": {"max_spend_usd_micros": 100}},
+      {"id": "conc1", "name": "parity-conc1", "limits": {"concurrency": 1}},
+      {"id": "override-ordered", "name": "parity-override-ordered", "scopes": {"policy_override": "ordered"}}
+    ]
+  },
+  "cases": [
+    {
+      "id": "CC-01",
+      "title": "OpenAI client, non-stream, canonical model echoes the requested model",
+      "rows": ["A-1", "B-4"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "chat completion",
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "headers": {"Authorization": "Bearer {{KEY:primary}}"},
+            "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "Say hello"}]}
+          },
+          "expect": {
+            "status": 200,
+            "headers": {"Content-Type": "application/json; charset=utf-8"},
+            "json": {
+              "id": "chatcmpl-mock",
+              "object": "chat.completion",
+              "created": 1700000000,
+              "model": "gpt-4o",
+              "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello from mock OpenAI"}, "finish_reason": "stop"}],
+              "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-02",
+      "title": "OpenAI client, stream: role chunk, content delta, finish+usage, [DONE]",
+      "rows": ["A-2", "B-3", "B-9", "D-1", "D-9"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "chat completion stream",
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "headers": {"Authorization": "Bearer {{KEY:primary}}"},
+            "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "Say hello"}], "stream": true}
+          },
+          "expect": {
+            "status": 200,
+            "headers": {"Content-Type": "text/event-stream; charset=utf-8"},
+            "sse": [
+              {"data": {"id": "chatcmpl-mock", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]}},
+              {"data": {"id": "chatcmpl-mock", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o", "choices": [{"index": 0, "delta": {"content": "Hello from mock OpenAI"}, "finish_reason": null}]}},
+              {"data": {"id": "chatcmpl-mock", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}},
+              {"data": {"id": "chatcmpl-mock", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o", "choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}},
+              {"data": "[DONE]"}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-03",
+      "title": "OpenAI tool-call stream: index, id, empty-then-filled arguments, tool_calls finish",
+      "rows": ["D-2"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "tool stream",
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "headers": {"Authorization": "Bearer {{KEY:primary}}"},
+            "body": {"model": "tool-model", "messages": [{"role": "user", "content": "Weather in Paris?"}], "stream": true, "tools": [{"type": "function", "function": {"name": "get_weather", "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}}}]}
+          },
+          "expect": {
+            "status": 200,
+            "sse": [
+              {"data": {"id": "chatcmpl-mock", "object": "chat.completion.chunk", "created": 1700000000, "model": "tool-model", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]}},
+              {"data": {"id": "chatcmpl-mock", "object": "chat.completion.chunk", "created": 1700000000, "model": "tool-model", "choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call_mock_1", "type": "function", "function": {"name": "get_weather", "arguments": ""}}]}, "finish_reason": null}]}},
+              {"data": {"id": "chatcmpl-mock", "object": "chat.completion.chunk", "created": 1700000000, "model": "tool-model", "choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "function": {"arguments": "{\"city\":\"Paris\"}"}}]}, "finish_reason": null}]}},
+              {"data": {"id": "chatcmpl-mock", "object": "chat.completion.chunk", "created": 1700000000, "model": "tool-model", "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]}},
+              {"data": {"id": "chatcmpl-mock", "object": "chat.completion.chunk", "created": 1700000000, "model": "tool-model", "choices": [], "usage": {"prompt_tokens": 18, "completion_tokens": 9, "total_tokens": 27}}},
+              {"data": "[DONE]"}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-04",
+      "title": "Fallback: first target 500, second target serves; usage records 2 attempts",
+      "rows": ["C-18", "D-10"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "fallback success",
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "headers": {"Authorization": "Bearer {{KEY:primary}}"},
+            "body": {"model": "fallback-500", "messages": [{"role": "user", "content": "Hi"}]}
+          },
+          "expect": {
+            "status": 200,
+            "json": {
+              "id": "chatcmpl-mock",
+              "object": "chat.completion",
+              "created": 1700000000,
+              "model": "fallback-500",
+              "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello from mock OpenAI"}, "finish_reason": "stop"}],
+              "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+            }
+          }
+        }
+      ],
+      "post": {
+        "path": "/api/requests?limit=20",
+        "where": {"model_requested": "fallback-500"},
+        "expect": {"status": "success", "attempts": 2, "provider_id": "prov-openai-b", "model_served": "mock-echo"},
+        "retry_ms": 3000
+      }
+    },
+    {
+      "id": "CC-05",
+      "title": "Cross-protocol: OpenAI client, Anthropic provider, non-stream",
+      "rows": ["G-1"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "openai client to anthropic provider",
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "headers": {"Authorization": "Bearer {{KEY:primary}}"},
+            "body": {"model": "claude-sonnet", "messages": [{"role": "user", "content": "Say hello"}]}
+          },
+          "expect": {
+            "status": 200,
+            "json": {
+              "id": "msg_mock",
+              "object": "chat.completion",
+              "created": "<any>",
+              "model": "claude-sonnet",
+              "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello from mock Anthropic"}, "finish_reason": "stop"}],
+              "usage": {"prompt_tokens": 12, "completion_tokens": 6, "total_tokens": 18}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-06",
+      "title": "Anthropic client, stream: native event order with early usage",
+      "rows": ["A-4", "D-4"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "anthropic stream",
+          "request": {
+            "method": "POST",
+            "path": "/v1/messages",
+            "headers": {"x-api-key": "{{KEY:primary}}", "anthropic-version": "2023-06-01"},
+            "body": {"model": "claude-sonnet", "max_tokens": 64, "messages": [{"role": "user", "content": "Say hello"}], "stream": true}
+          },
+          "expect": {
+            "status": 200,
+            "sse": [
+              {"event": "message_start", "data": {"type": "message_start", "message": {"id": "msg_mock", "type": "message", "role": "assistant", "model": "claude-sonnet", "content": [], "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 12, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 1}}}},
+              {"event": "content_block_start", "data": {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}},
+              {"event": "content_block_delta", "data": {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello from mock Anthropic"}}},
+              {"event": "content_block_stop", "data": {"type": "content_block_stop", "index": 0}},
+              {"event": "message_delta", "data": {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"output_tokens": 6}}},
+              {"event": "message_stop", "data": {"type": "message_stop"}}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-07",
+      "title": "Anthropic stream: ping frames pass through between events",
+      "rows": ["D-5"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "ping stream",
+          "request": {
+            "method": "POST",
+            "path": "/v1/messages",
+            "headers": {"x-api-key": "{{KEY:primary}}"},
+            "body": {"model": "ping-model", "max_tokens": 64, "messages": [{"role": "user", "content": "Say hello"}], "stream": true}
+          },
+          "expect": {
+            "status": 200,
+            "sse": [
+              {"event": "message_start", "data": {"type": "message_start", "message": {"id": "msg_mock", "type": "message", "role": "assistant", "model": "ping-model", "content": [], "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 12, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 1}}}},
+              {"event": "ping", "data": {"type": "ping"}},
+              {"event": "content_block_start", "data": {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}},
+              {"event": "content_block_delta", "data": {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello from mock Anthropic"}}},
+              {"event": "content_block_stop", "data": {"type": "content_block_stop", "index": 0}},
+              {"event": "message_delta", "data": {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"output_tokens": 6}}},
+              {"event": "message_stop", "data": {"type": "message_stop"}}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-08",
+      "title": "Anthropic stream: thinking_delta then signature_delta, then text block",
+      "rows": ["D-6"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "thinking stream",
+          "request": {
+            "method": "POST",
+            "path": "/v1/messages",
+            "headers": {"x-api-key": "{{KEY:primary}}"},
+            "body": {"model": "think-model", "max_tokens": 64, "messages": [{"role": "user", "content": "Think then answer"}], "stream": true}
+          },
+          "expect": {
+            "status": 200,
+            "sse": [
+              {"event": "message_start", "data": {"type": "message_start", "message": {"id": "msg_mock", "type": "message", "role": "assistant", "model": "think-model", "content": [], "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 20, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 1}}}},
+              {"event": "content_block_start", "data": {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}}},
+              {"event": "content_block_delta", "data": {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Let me think."}}},
+              {"event": "content_block_delta", "data": {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "sig-mock"}}},
+              {"event": "content_block_stop", "data": {"type": "content_block_stop", "index": 0}},
+              {"event": "content_block_start", "data": {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}}},
+              {"event": "content_block_delta", "data": {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "The answer is 42."}}},
+              {"event": "content_block_stop", "data": {"type": "content_block_stop", "index": 1}},
+              {"event": "message_delta", "data": {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"output_tokens": 12}}},
+              {"event": "message_stop", "data": {"type": "message_stop"}}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-09",
+      "title": "Cross-protocol: OpenAI client, Gemini provider, non-stream",
+      "rows": ["G-2"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "openai client to gemini provider",
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "headers": {"Authorization": "Bearer {{KEY:primary}}"},
+            "body": {"model": "gemini-flash", "messages": [{"role": "user", "content": "Say hello"}]}
+          },
+          "expect": {
+            "status": 200,
+            "json": {
+              "id": "<any>",
+              "object": "chat.completion",
+              "created": "<any>",
+              "model": "gemini-flash",
+              "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello from mock Gemini"}, "finish_reason": "stop"}],
+              "usage": {"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-10",
+      "title": "Gemini client, native stream: content chunk then finishReason+usageMetadata",
+      "rows": ["A-6", "D-7"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "gemini stream",
+          "request": {
+            "method": "POST",
+            "path": "/v1beta/models/gemini-flash:streamGenerateContent?alt=sse",
+            "headers": {"x-goog-api-key": "{{KEY:primary}}"},
+            "body": {"contents": [{"role": "user", "parts": [{"text": "Say hello"}]}]}
+          },
+          "expect": {
+            "status": 200,
+            "sse": [
+              {"data": {"candidates": [{"content": {"role": "model", "parts": [{"text": "Hello from mock Gemini"}]}}], "modelVersion": "gemini-flash"}},
+              {"data": {"candidates": [{"finishReason": "STOP"}], "usageMetadata": {"promptTokenCount": 8, "candidatesTokenCount": 4, "totalTokenCount": 12}, "modelVersion": "gemini-flash"}}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-11",
+      "title": "Cross-protocol: Anthropic client to OpenAI provider; Gemini client to OpenAI provider",
+      "rows": ["G-3", "G-4"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "anthropic client to openai provider",
+          "request": {
+            "method": "POST",
+            "path": "/v1/messages",
+            "headers": {"x-api-key": "{{KEY:primary}}"},
+            "body": {"model": "gpt-4o", "max_tokens": 64, "messages": [{"role": "user", "content": "Say hello"}]}
+          },
+          "expect": {
+            "status": 200,
+            "json": {
+              "id": "chatcmpl-mock",
+              "type": "message",
+              "role": "assistant",
+              "model": "gpt-4o",
+              "content": [{"type": "text", "text": "Hello from mock OpenAI"}],
+              "stop_reason": "end_turn",
+              "stop_sequence": null,
+              "usage": {"input_tokens": 10, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 5}
+            }
+          }
+        },
+        {
+          "name": "gemini client to openai provider (stream)",
+          "request": {
+            "method": "POST",
+            "path": "/v1beta/models/gpt-4o:streamGenerateContent",
+            "headers": {"x-goog-api-key": "{{KEY:primary}}"},
+            "body": {"contents": [{"role": "user", "parts": [{"text": "Say hello"}]}]}
+          },
+          "expect": {
+            "status": 200,
+            "sse": [
+              {"data": {"candidates": [{"content": {"role": "model", "parts": [{"text": "Hello from mock OpenAI"}]}}], "modelVersion": "gpt-4o"}},
+              {"data": {"candidates": [{"finishReason": "STOP"}], "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 5, "totalTokenCount": 15}, "modelVersion": "gpt-4o"}}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-12",
+      "title": "Gemini unknown method: 404 in the Gemini envelope",
+      "rows": ["A-10"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "bad method",
+          "request": {
+            "method": "POST",
+            "path": "/v1beta/models/gemini-flash:transmogrify",
+            "headers": {"x-goog-api-key": "{{KEY:primary}}"},
+            "body": {"contents": []}
+          },
+          "expect": {
+            "status": 404,
+            "json": {"error": {"code": 404, "message": "<any>", "status": "NOT_FOUND"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-13",
+      "title": "GET /v1/models lists canonical models (scope-filtered per key)",
+      "rows": ["A-7"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "models listing",
+          "request": {"method": "GET", "path": "/v1/models", "headers": {"Authorization": "Bearer {{KEY:primary}}"}},
+          "expect": {
+            "status": 200,
+            "json": {
+              "object": "list",
+              "data": [
+                {"id": "gpt-4o", "object": "model", "created": "<any>", "owned_by": "onegate"},
+                {"id": "openai-echo", "object": "model", "created": "<any>", "owned_by": "onegate"},
+                {"id": "claude-sonnet", "object": "model", "created": "<any>", "owned_by": "onegate"},
+                {"id": "gemini-flash", "object": "model", "created": "<any>", "owned_by": "onegate"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "scoped key sees only allowed models",
+          "request": {"method": "GET", "path": "/v1/models", "headers": {"Authorization": "Bearer {{KEY:scoped-model}}"}},
+          "expect": {
+            "status": 200,
+            "json": {
+              "object": "list",
+              "data": [{"id": "gpt-4o", "object": "model", "created": "<any>", "owned_by": "onegate"}]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-14",
+      "title": "Trailing-slash variant is 404, not a silent match",
+      "rows": ["A-12"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "trailing slash",
+          "request": {
+            "method": "POST",
+            "path": "/v1/messages/",
+            "headers": {"x-api-key": "{{KEY:primary}}"},
+            "body": {"model": "gpt-4o", "max_tokens": 8, "messages": []}
+          },
+          "expect": {"status": 404}
+        }
+      ]
+    },
+    {
+      "id": "CC-15",
+      "title": "No CORS headers on proxy endpoints even with an Origin header",
+      "rows": ["B-7"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "preflight-ish GET with Origin",
+          "request": {"method": "GET", "path": "/v1/models", "headers": {"Origin": "https://evil.example", "Authorization": "Bearer {{KEY:primary}}"}},
+          "expect": {
+            "status": 200,
+            "headers_absent": ["access-control-allow-origin", "access-control-allow-credentials"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-16",
+      "title": "Missing credential: 401 authentication_error / missing_api_key, per-protocol envelopes",
+      "rows": ["C-1", "C-24"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "openai missing key",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 401,
+            "json": {"error": {"message": "missing API key", "type": "authentication_error", "code": "missing_api_key"}}
+          }
+        },
+        {
+          "name": "anthropic missing key",
+          "request": {"method": "POST", "path": "/v1/messages", "body": {"model": "gpt-4o", "max_tokens": 8, "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 401,
+            "json": {"type": "error", "error": {"type": "authentication_error", "message": "missing API key"}}
+          }
+        },
+        {
+          "name": "gemini missing key",
+          "request": {"method": "POST", "path": "/v1beta/models/gemini-flash:generateContent", "body": {"contents": []}},
+          "expect": {
+            "status": 401,
+            "json": {"error": {"code": 401, "message": "missing API key", "status": "UNAUTHENTICATED"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-17",
+      "title": "RPM quota: third request in the minute rejects with 429 + Retry-After",
+      "rows": ["C-6", "B-5"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "first request passes",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:rpm2}}"}, "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {"status": 200}
+        },
+        {
+          "name": "second request passes",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:rpm2}}"}, "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {"status": 200}
+        },
+        {
+          "name": "third request rejects",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:rpm2}}"}, "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 429,
+            "headers": {"Retry-After": "<any>"},
+            "json": {"error": {"message": "rate limit of 2 requests per minute exceeded", "type": "rate_limit_error", "code": "rpm_limit_exceeded"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-18",
+      "title": "Upstream 429 exhausted: 429 in client envelope, provider Retry-After preserved",
+      "rows": ["B-6", "C-17"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "terminal 429",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "fail-429", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 429,
+            "headers": {"Retry-After": "7"},
+            "json": {"error": {"message": "mock openai error 429", "type": "rate_limit_error", "code": "mock_error"}}
+          }
+        }
+      ],
+      "post": {
+        "path": "/api/requests?limit=20",
+        "where": {"model_requested": "fail-429"},
+        "expect": {"status": "error", "attempts": 2},
+        "retry_ms": 3000
+      }
+    },
+    {
+      "id": "CC-19",
+      "title": "Revoked key: 403 permission_error / key_revoked",
+      "rows": ["C-4"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "revoked",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:revoked}}"}, "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 403,
+            "json": {"error": {"message": "API key has been revoked", "type": "permission_error", "code": "key_revoked"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-20",
+      "title": "Expired key: 403 permission_error / key_expired",
+      "rows": ["C-5"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "expired",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:expired}}"}, "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 403,
+            "json": {"error": {"message": "API key has expired", "type": "permission_error", "code": "key_expired"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-21",
+      "title": "Unknown model: 404 not_found_error; aliases resolve to the same model",
+      "rows": ["C-10", "G-5"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "unknown model",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "no-such-model", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 404,
+            "json": {"error": {"message": "model not found: no-such-model", "type": "not_found_error"}}
+          }
+        },
+        {
+          "name": "alias resolves",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "echo-alias", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 200,
+            "json": {"id": "chatcmpl-mock", "model": "echo-alias", "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello from mock OpenAI"}, "finish_reason": "stop"}]}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-22",
+      "title": "Model denied by key scope: 403 permission_error",
+      "rows": ["C-11"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "scoped model denied",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:scoped-model}}"}, "body": {"model": "claude-sonnet", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 403,
+            "json": {"error": {"message": "model not allowed by virtual key scope", "type": "permission_error"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-23",
+      "title": "All provider targets denied by key scope: 403 permission_error",
+      "rows": ["C-12"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "scoped provider denied",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:scoped-provider}}"}, "body": {"model": "claude-sonnet", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 403,
+            "json": {"error": {"message": "all provider targets denied by virtual key scope", "type": "permission_error"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-24",
+      "title": "Invalid JSON body: 400 invalid_request_error",
+      "rows": ["C-13"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "garbage body",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}", "Content-Type": "application/json"}, "raw_body": "not json {"},
+          "expect": {
+            "status": 400,
+            "json": {"error": {"message": "<any>", "type": "invalid_request_error"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-25",
+      "title": "Anthropic missing max_tokens: 400 with the adapter message",
+      "rows": ["C-14"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "no max_tokens",
+          "request": {"method": "POST", "path": "/v1/messages", "headers": {"x-api-key": "{{KEY:primary}}"}, "body": {"model": "claude-sonnet", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 400,
+            "json": {"type": "error", "error": {"type": "invalid_request_error", "message": "<any>"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-26",
+      "title": "Oversize body: 413 request_too_large / request_body_too_large",
+      "rows": ["C-15"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "oversize",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "oversize_body_bytes": 33554433},
+          "expect": {
+            "status": 413,
+            "json": {"error": {"message": "request body exceeds the configured limit", "type": "request_too_large", "code": "request_body_too_large"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-27",
+      "title": "Upstream 401 exhausted: 502 api_error / upstream_authentication",
+      "rows": ["C-16"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "terminal upstream auth failure",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "fail-401", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 502,
+            "json": {"error": {"message": "mock openai error 401", "type": "api_error", "code": "upstream_authentication"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-28",
+      "title": "Upstream 5xx exhausted: 502 api_error",
+      "rows": ["C-18"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "terminal 5xx",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "fail-500", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 502,
+            "json": {"error": {"message": "mock openai error 500", "type": "api_error", "code": "mock_error"}}
+          }
+        }
+      ],
+      "post": {
+        "path": "/api/requests?limit=20",
+        "where": {"model_requested": "fail-500"},
+        "expect": {"status": "error", "attempts": 2},
+        "retry_ms": 3000
+      }
+    },
+    {
+      "id": "CC-29",
+      "title": "Anthropic 529 overload: 503 overloaded_error to the client",
+      "rows": ["C-19"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "overloaded",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "overloaded-model", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 503,
+            "json": {"error": {"message": "Overloaded", "type": "overloaded_error"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-30",
+      "title": "Context length exceeded: 400 with provider code passthrough",
+      "rows": ["C-20"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "ctxlen",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "ctxlen-model", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 400,
+            "json": {"error": {"message": "This model's maximum context length is 4096 tokens. However, your messages resulted in 5000 tokens. Please reduce the length of the messages.", "type": "invalid_request_error", "code": "context_length_exceeded", "param": "messages"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-31",
+      "title": "Upstream garbage response: 502 api_error / upstream_invalid_response",
+      "rows": ["C-16"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "bad json upstream",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "badjson-model", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 502,
+            "json": {"error": {"message": "upstream returned an invalid response", "type": "api_error", "code": "upstream_invalid_response"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-32",
+      "title": "Circuit opens after 3 consecutive target failures; 4th request gets 503 no-healthy-targets",
+      "rows": ["C-23"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "failure 1 (502 terminal, circuit closed)",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "fail-500", "messages": [{"role": "user", "content": "a"}]}},
+          "expect": {"status": 502}
+        },
+        {
+          "name": "failure 2",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "fail-500", "messages": [{"role": "user", "content": "b"}]}},
+          "expect": {"status": 502}
+        },
+        {
+          "name": "failure 3 (circuit trips after this attempt)",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "fail-500", "messages": [{"role": "user", "content": "c"}]}},
+          "expect": {"status": 502}
+        },
+        {
+          "name": "4th request: no healthy targets",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "fail-500", "messages": [{"role": "user", "content": "d"}]}},
+          "expect": {
+            "status": 503,
+            "json": {"error": {"message": "no healthy targets available", "type": "overloaded_error"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-33",
+      "title": "Mid-stream provider abort after first byte: in-stream error event, no [DONE]",
+      "rows": ["D-3", "D-8"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "midstream abort",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "midstream-model", "messages": [{"role": "user", "content": "hi"}], "stream": true}},
+          "expect": {
+            "status": 200,
+            "sse": [
+              {"data": {"id": "chatcmpl-mock", "object": "chat.completion.chunk", "created": 1700000000, "model": "midstream-model", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]}},
+              {"data": {"error": {"message": "<any>", "type": "api_error"}}}
+            ],
+            "sse_absent_data": ["[DONE]"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-34",
+      "title": "Per-key policy override: weighted model served by ordered override (deterministic target A)",
+      "rows": ["G-6"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "override ordered on weighted model",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:override-ordered}}"}, "body": {"model": "weighted-model", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {"status": 200}
+        }
+      ],
+      "post": {
+        "path": "/api/requests?limit=20",
+        "where": {"model_requested": "weighted-model"},
+        "expect": {"status": "success", "provider_id": "prov-openai-a"},
+        "retry_ms": 3000
+      }
+    },
+    {
+      "id": "CC-35",
+      "title": "Provider model remap: canonical claude-sonnet served as claude-3-5-sonnet-latest",
+      "rows": ["G-7"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "remapped model",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "claude-sonnet", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {"status": 200}
+        }
+      ],
+      "post": {
+        "path": "/api/requests?limit=20",
+        "where": {"model_requested": "claude-sonnet"},
+        "expect": {"status": "success", "model_served": "claude-3-5-sonnet-latest", "provider_id": "prov-anthropic"},
+        "retry_ms": 3000
+      }
+    },
+    {
+      "id": "CC-36",
+      "title": "Malformed key shape: 401 invalid_api_key",
+      "rows": ["C-2"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "malformed",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer sk-not-a-gateway-key"}, "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 401,
+            "json": {"error": {"message": "invalid API key", "type": "authentication_error", "code": "invalid_api_key"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-37",
+      "title": "Well-formed unknown key: 401 invalid_api_key (indistinguishable from malformed)",
+      "rows": ["C-3"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "unknown",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer ogk-0000000000000000000000000000"}, "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 401,
+            "json": {"error": {"message": "invalid API key", "type": "authentication_error", "code": "invalid_api_key"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-38",
+      "title": "TPM quota: actual token usage debits the bucket; second request rejects 429",
+      "rows": ["C-7"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "first request passes (15 actual tokens against tpm=10)",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:tpm10}}"}, "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {"status": 200}
+        },
+        {
+          "name": "second request rejects",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:tpm10}}"}, "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 429,
+            "headers": {"Retry-After": "<any>"},
+            "json": {"error": {"message": "token limit of 10 tokens per minute exceeded", "type": "rate_limit_error", "code": "tpm_limit_exceeded"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-39",
+      "title": "Spend cap: gpt-4o request costs 75 micros; second request exceeds the 100-micro cap",
+      "rows": ["C-8"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "first request passes (spend 75 of 100)",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:spend100}}"}, "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {"status": 200}
+        },
+        {
+          "name": "second request rejects",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:spend100}}"}, "body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}},
+          "expect": {
+            "status": 429,
+            "headers": {"Retry-After": "60"},
+            "json": {"error": {"message": "lifetime spend cap of $0.00 reached (current spend: $0.00)", "type": "rate_limit_error", "code": "spend_limit_exceeded"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "CC-40",
+      "title": "Concurrency cap: two parallel requests to a slow model; exactly one 429",
+      "rows": ["C-9"],
+      "severity": "blocker",
+      "concurrent": true,
+      "steps": [
+        {
+          "name": "request A",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:conc1}}"}, "body": {"model": "slow-model", "messages": [{"role": "user", "content": "a"}]}},
+          "expect": {"status": 200}
+        },
+        {
+          "name": "request B",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:conc1}}"}, "body": {"model": "slow-model", "messages": [{"role": "user", "content": "b"}]}},
+          "expect": {
+            "status": 429,
+            "json": {"error": {"message": "concurrency limit of 1 in-flight requests reached", "type": "rate_limit_error", "code": "concurrency_limit_exceeded"}}
+          }
+        }
+      ],
+      "expect_set": true
+    },
+    {
+      "id": "CC-41",
+      "title": "Client disconnect during stalled upstream: usage recorded as cancelled, upstream cancelled",
+      "rows": ["C-22"],
+      "severity": "blocker",
+      "steps": [
+        {
+          "name": "disconnect mid-request",
+          "request": {"method": "POST", "path": "/v1/chat/completions", "headers": {"Authorization": "Bearer {{KEY:primary}}"}, "body": {"model": "stall-model", "messages": [{"role": "user", "content": "hi"}]}},
+          "abort_after_ms": 800
+        }
+      ],
+      "post": {
+        "path": "/api/requests?limit=20",
+        "where": {"model_requested": "stall-model"},
+        "expect": {"status": "cancelled"},
+        "retry_ms": 5000
+      }
+    }
+  ]
+}
+
