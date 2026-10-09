@@ -6,21 +6,42 @@ import (
 	"strings"
 )
 
-// Authenticator decides whether a management request is authenticated and
-// under which principal. p6.api-impl ships the admin-token verifier;
-// p6.auth-sessions will chain a session-cookie verifier (plus CSRF) in
-// front of it with the same interface.
+// authResult describes an accepted credential: who is calling and by
+// which mechanism. ViaSession drives CSRF enforcement — cookie-based
+// credentials can be forged cross-origin by the browser, bearer tokens
+// cannot.
+type authResult struct {
+	Principal  string
+	ViaSession bool
+}
+
+// Authenticator decides whether a management request is authenticated.
+// Implementations: admin-token (bootstrap/CLI) and session cookies
+// (dashboard); the chain tries sessions first, then the token.
 type Authenticator interface {
-	// Authenticate returns the principal identifier and true when the
-	// request may proceed; false renders 401.
-	Authenticate(r *http.Request) (principal string, ok bool)
+	// Authenticate returns the principal when the request may proceed.
+	Authenticate(r *http.Request) (authResult, bool)
+}
+
+// chainAuthenticator tries each mechanism in order and returns the first
+// success.
+type chainAuthenticator struct {
+	mechanisms []Authenticator
+}
+
+func (c chainAuthenticator) Authenticate(r *http.Request) (authResult, bool) {
+	for _, m := range c.mechanisms {
+		if res, ok := m.Authenticate(r); ok {
+			return res, true
+		}
+	}
+	return authResult{}, false
 }
 
 // TokenAuthenticator verifies the bootstrap admin token
-// (ONEGATE_ADMIN_TOKEN) via the Authorization: Bearer header or the
-// X-Admin-Token header. Comparison is constant-time. An empty configured
-// token authenticates nobody — admin routes then require the session
-// authenticator (safe by default).
+// (ONEGATE_ADMIN_TOKEN) via Authorization: Bearer or X-Admin-Token.
+// Comparison is constant-time. An empty configured token authenticates
+// nobody (safe by default).
 type TokenAuthenticator struct {
 	token string
 }
@@ -32,21 +53,39 @@ func NewTokenAuthenticator(token string) *TokenAuthenticator {
 }
 
 // Authenticate implements Authenticator.
-func (t *TokenAuthenticator) Authenticate(r *http.Request) (string, bool) {
+func (t *TokenAuthenticator) Authenticate(r *http.Request) (authResult, bool) {
 	if t.token == "" {
-		return "", false
+		return authResult{}, false
 	}
 	presented := bearerToken(r)
 	if presented == "" {
 		presented = r.Header.Get("X-Admin-Token")
 	}
 	if presented == "" {
-		return "", false
+		return authResult{}, false
 	}
 	if subtle.ConstantTimeCompare([]byte(presented), []byte(t.token)) != 1 {
-		return "", false
+		return authResult{}, false
 	}
-	return "admin-token", true
+	return authResult{Principal: "admin-token"}, true
+}
+
+// SessionAuthenticator validates the dashboard session cookie.
+type SessionAuthenticator struct {
+	sessions *SessionManager
+}
+
+// Authenticate implements Authenticator via the one gate session cookie.
+func (s *SessionAuthenticator) Authenticate(r *http.Request) (authResult, bool) {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil || cookie.Value == "" {
+		return authResult{}, false
+	}
+	sess, ok := s.sessions.Get(cookie.Value)
+	if !ok {
+		return authResult{}, false
+	}
+	return authResult{Principal: "user:" + sess.user, ViaSession: true}, true
 }
 
 // bearerToken extracts a Bearer credential (RFC 6750), tolerating case

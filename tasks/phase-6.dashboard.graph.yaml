@@ -44,12 +44,21 @@ nodes:
   - id: p6.auth-sessions
     title: "Dashboard auth: login, session cookies, CSRF, logout"
     owner: security-engineer
-    status: pending
+    status: done
     depends_on: [p6.api-impl]
     deliverables:
       - "Session store, cookie hardening, CSRF middleware"
     acceptance:
       - "First-run setup flow creates admin; sessions expire; CSRF blocked in tests"
+    evidence:
+      - "internal/api/sessions.go: in-memory SessionManager (32-byte hex ids + per-session CSRF tokens, lazy expiry + sweep on create, no background goroutine); internal/api/sessions_handlers.go: setup-status/setup/login/logout/session per spec"
+      - "internal/auth/password.go: PBKDF2-HMAC-SHA256 (stdlib crypto/pbkdf2, Go 1.24), 600k iterations per OWASP, parameter-aware verify, constant-time; BurnPasswordWork equalizes unknown-username timing (no user enumeration)"
+      - "Storage migration 4 (admin_users) + AdminUserRepo; setup refuses after first admin (403)"
+      - "Cookie hardening: HttpOnly + SameSite=Lax + Path=/ + Max-Age=TTL; Secure behind TLS/X-Forwarded-Proto; fresh session id per login (fixation defense)"
+      - "CSRF middleware in API.wrap: session-authenticated mutations require X-CSRF-Token (constant-time); admin-token requests exempt by design; verified in tests (403 csrf_token_invalid without/wrong token, 201 with correct token)"
+      - "Tests (sessions_test.go): TestFirstRunSetupFlow, TestLoginFlowAndCookieHardening (uniform 401, cookie flags, fresh id), TestCSRFBlockedForSessionMutations, TestSessionExpiry (clock-advanced 401), TestLogoutInvalidatesSession, TestLoginBruteForceLimited (429 within auth class), TestSetupStatusCountsAdmins"
+      - "Live binary smoke: setup 201 + hardened cookie, session echoes CSRF, cookie-mutation without CSRF -> 403; caught and fixed nil-clock panic in NewSessionManager that unit tests missed"
+      - "Full gate: go vet, go test -race (21 pkgs), graph --check, api-check all green"
 
   - id: p6.design-system
     title: "Dashboard design system: tokens, charts, empty/loading states"

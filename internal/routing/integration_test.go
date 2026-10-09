@@ -731,11 +731,11 @@ func TestIntegration_HotReload_LiveUpdate(t *testing.T) {
 		Capabilities: *caps,
 		Targets: []domain.ModelTarget{
 			{
-				ProviderID:     "prov-fallback",
-				ProviderModel:  "gpt-4o-fallback",
-				Position:       0,
-				Weight:         1,
-				Capabilities:   caps,
+				ProviderID:    "prov-fallback",
+				ProviderModel: "gpt-4o-fallback",
+				Position:      0,
+				Weight:        1,
+				Capabilities:  caps,
 			},
 		},
 	}

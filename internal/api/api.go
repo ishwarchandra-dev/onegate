@@ -27,11 +27,13 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -107,9 +109,21 @@ type Options struct {
 	ProviderCipher *auth.Cipher
 
 	// AdminToken enables admin-token auth (ONEGATE_ADMIN_TOKEN). Empty
-	// disables token auth entirely — admin routes then require the
-	// session authenticator (p6.auth-sessions).
+	// disables token auth entirely.
 	AdminToken string
+
+	// Sessions is the dashboard session store. Nil disables session
+	// auth (the four /api/auth operations then answer 503).
+	Sessions *SessionManager
+
+	// PasswordHasher seals passwords for first-run setup. Nil selects
+	// the production PBKDF2 parameters (tests inject cheap ones).
+	PasswordHasher func(password string) (string, error)
+
+	// PasswordIterations mirrors the hasher's PBKDF2 cost so the
+	// unknown-username login path burns identical work (timing
+	// equalization). Zero selects the production default.
+	PasswordIterations int
 
 	// LogHub backs /api/logs/live (SSE) and /api/logs/recent.
 	LogHub *observability.LogHub
@@ -142,7 +156,7 @@ func timeNowMS() int64 { return time.Now().UnixMilli() }
 
 // API is the registered management plane. It owns the mux subtree /api/*
 // (plus the legacy-free SSE feed) and the middleware chain: rate limit ->
-// authenticate -> dispatch.
+// authenticate -> (CSRF for session-authenticated mutations) -> dispatch.
 type API struct {
 	opts     Options
 	logger   *slog.Logger
@@ -161,10 +175,26 @@ func Register(mux *http.ServeMux, opts Options) *API {
 	if opts.NowMS == nil {
 		opts.NowMS = func() int64 { return timeNowMS() }
 	}
+	if opts.PasswordHasher == nil {
+		opts.PasswordHasher = func(password string) (string, error) {
+			return auth.HashPassword(password, auth.DefaultPasswordIterations)
+		}
+	}
+
+	// Authentication chain: dashboard sessions first, then the bootstrap
+	// admin token.
+	var authenticator Authenticator = NewTokenAuthenticator(opts.AdminToken)
+	if opts.Sessions != nil {
+		authenticator = chainAuthenticator{mechanisms: []Authenticator{
+			&SessionAuthenticator{sessions: opts.Sessions},
+			NewTokenAuthenticator(opts.AdminToken),
+		}}
+	}
+
 	a := &API{
 		opts:     opts,
 		logger:   opts.Logger,
-		auth:     NewTokenAuthenticator(opts.AdminToken),
+		auth:     authenticator,
 		limits:   newLimiter(opts.NowMS),
 		handlers: map[string]http.HandlerFunc{},
 	}
@@ -190,12 +220,12 @@ func Register(mux *http.ServeMux, opts Options) *API {
 }
 
 // wrap applies the per-route middleware chain: rate limit -> auth ->
-// handler. The SSE route additionally tracks concurrent streams.
+// CSRF (session-authenticated mutations only) -> handler.
 func (a *API) wrap(rt routeSpec, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		principal := "anonymous"
+		principal := clientIP(r)
 		if rt.Auth != "public" {
-			p, ok := a.auth.Authenticate(r)
+			res, ok := a.auth.Authenticate(r)
 			if !ok {
 				writeError(w, domain.GatewayError{
 					Status:  http.StatusUnauthorized,
@@ -205,7 +235,19 @@ func (a *API) wrap(rt routeSpec, h http.HandlerFunc) http.HandlerFunc {
 				})
 				return
 			}
-			principal = p
+			principal = res.Principal
+			// CSRF: cookie-borne credentials can be replayed cross-origin
+			// by the victim's browser; the double-submit token blocks
+			// that. Bearer/admin-token requests are inherently CSRF-proof.
+			if res.ViaSession && isMutating(rt.Method) && !a.csrfValid(r) {
+				writeError(w, domain.GatewayError{
+					Status:  http.StatusForbidden,
+					Type:    domain.ErrPermission,
+					Code:    "csrf_token_invalid",
+					Message: "missing or invalid CSRF token",
+				})
+				return
+			}
 		}
 		if !a.limits.allow(rt.RateLimit, principal) {
 			writeError(w, domain.GatewayError{
@@ -221,13 +263,53 @@ func (a *API) wrap(rt routeSpec, h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// isMutating reports whether the method changes state.
+func isMutating(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	}
+	return false
+}
+
+// csrfValid checks the X-CSRF-Token double-submit against the session.
+func (a *API) csrfValid(r *http.Request) bool {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return false
+	}
+	sess, ok := a.opts.Sessions.Get(cookie.Value)
+	if !ok {
+		return false
+	}
+	presented := r.Header.Get("X-CSRF-Token")
+	if presented == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(presented), []byte(sess.csrfToken)) == 1
+}
+
+// clientIP extracts the best-effort remote address for public-route
+// rate limiting (strips the port; the embedded dashboard is not assumed
+// to sit behind a trusted proxy).
+func clientIP(r *http.Request) string {
+	host := r.RemoteAddr
+	if host == "" {
+		return "unknown"
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
+}
+
 // bind registers every handler by OperationID.
 func (a *API) bind() {
 	a.handlers["getSetupStatus"] = a.handleSetupStatus
-	a.handlers["login"] = a.handleNotYetSessions // p6.auth-sessions
-	a.handlers["createAdmin"] = a.handleNotYetSessions
-	a.handlers["logout"] = a.handleNotYetSessions
-	a.handlers["getSession"] = a.handleNotYetSessions
+	a.handlers["login"] = a.handleLogin
+	a.handlers["createAdmin"] = a.handleCreateAdmin
+	a.handlers["logout"] = a.handleLogout
+	a.handlers["getSession"] = a.handleGetSession
 
 	a.handlers["listProviders"] = a.handleListProviders
 	a.handlers["createProvider"] = a.handleCreateProvider
@@ -267,9 +349,9 @@ func (a *API) bind() {
 	a.handlers["getEffectiveConfig"] = a.handleSystemConfig
 }
 
-// handleNotYetSessions stands in for the four session operations while
-// p6.auth-sessions is pending: the contract is reserved in the spec, the
-// routes answer 503 so clients can feature-detect.
+// handleNotYetSessions is the fallback for session operations when the
+// session store is not wired (Sessions == nil): the contract is reserved
+// in the spec; the routes answer 503 so clients can feature-detect.
 func (a *API) handleNotYetSessions(w http.ResponseWriter, _ *http.Request) {
 	writeError(w, domain.GatewayError{
 		Status:    http.StatusServiceUnavailable,

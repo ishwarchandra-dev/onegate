@@ -28,19 +28,6 @@ type statusStorage struct {
 	DBSizeBytes int64 `json:"db_size_bytes,omitempty"`
 }
 
-// handleSetupStatus GET /api/auth/setup-status
-//
-// While p6.auth-sessions is pending, first-run setup is not yet
-// available; the endpoint truthfully reports that setup is required
-// through the session node's own store once it lands. For now: setup is
-// reported required (the dashboard will route to setup when that flow
-// ships; token-authenticated installs bypass the wizard).
-func (a *API) handleSetupStatus(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, struct {
-		SetupRequired bool `json:"setup_required"`
-	}{SetupRequired: true})
-}
-
 // handleSystemStatus GET /api/system/status
 func (a *API) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 	st := systemStatus{

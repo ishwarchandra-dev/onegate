@@ -25,7 +25,7 @@ import (
 )
 
 type e2eHarness struct {
-	mockServer *mockprovider.Server
+	mockServer  *mockprovider.Server
 	proxyServer *httptest.Server
 	client      *client.Client
 	store       *storage.Store

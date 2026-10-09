@@ -20,87 +20,87 @@ var migrations = []migration{
 		version: 1,
 		stmts: []string{
 			`CREATE TABLE providers (
-				id          TEXT PRIMARY KEY,
-				name        TEXT NOT NULL,
-				protocol    TEXT NOT NULL,
-				base_url    TEXT NOT NULL DEFAULT '',
-				api_key_enc BLOB NOT NULL DEFAULT x'',
-				enabled     INTEGER NOT NULL DEFAULT 1,
-				created_ms  INTEGER NOT NULL,
-				updated_ms  INTEGER NOT NULL
-			)`,
+                                id          TEXT PRIMARY KEY,
+                                name        TEXT NOT NULL,
+                                protocol    TEXT NOT NULL,
+                                base_url    TEXT NOT NULL DEFAULT '',
+                                api_key_enc BLOB NOT NULL DEFAULT x'',
+                                enabled     INTEGER NOT NULL DEFAULT 1,
+                                created_ms  INTEGER NOT NULL,
+                                updated_ms  INTEGER NOT NULL
+                        )`,
 			`CREATE TABLE models (
-				id           TEXT PRIMARY KEY,
-				aliases_json TEXT NOT NULL DEFAULT '[]',
-				caps_json    TEXT NOT NULL DEFAULT '{}',
-				created_ms   INTEGER NOT NULL,
-				updated_ms   INTEGER NOT NULL
-			)`,
+                                id           TEXT PRIMARY KEY,
+                                aliases_json TEXT NOT NULL DEFAULT '[]',
+                                caps_json    TEXT NOT NULL DEFAULT '{}',
+                                created_ms   INTEGER NOT NULL,
+                                updated_ms   INTEGER NOT NULL
+                        )`,
 			`CREATE TABLE model_targets (
-				model_id        TEXT NOT NULL REFERENCES models(id) ON DELETE CASCADE,
-				provider_id     TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
-				provider_model  TEXT NOT NULL,
-				weight          INTEGER NOT NULL DEFAULT 1,
-				position        INTEGER NOT NULL DEFAULT 0,
-				cost_multiplier INTEGER NOT NULL DEFAULT 100,
-				PRIMARY KEY (model_id, provider_id, provider_model)
-			)`,
+                                model_id        TEXT NOT NULL REFERENCES models(id) ON DELETE CASCADE,
+                                provider_id     TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+                                provider_model  TEXT NOT NULL,
+                                weight          INTEGER NOT NULL DEFAULT 1,
+                                position        INTEGER NOT NULL DEFAULT 0,
+                                cost_multiplier INTEGER NOT NULL DEFAULT 100,
+                                PRIMARY KEY (model_id, provider_id, provider_model)
+                        )`,
 			`CREATE INDEX idx_model_targets_model ON model_targets(model_id, position)`,
 			`CREATE TABLE virtual_keys (
-				id           TEXT PRIMARY KEY,
-				name         TEXT NOT NULL,
-				prefix       TEXT NOT NULL,
-				key_hash     TEXT NOT NULL,
-				scopes_json  TEXT NOT NULL DEFAULT '{}',
-				limits_json  TEXT NOT NULL DEFAULT '{}',
-				status       TEXT NOT NULL DEFAULT 'active',
-				created_ms   INTEGER NOT NULL,
-				expires_ms   INTEGER NOT NULL DEFAULT 0,
-				last_used_ms INTEGER NOT NULL DEFAULT 0
-			)`,
+                                id           TEXT PRIMARY KEY,
+                                name         TEXT NOT NULL,
+                                prefix       TEXT NOT NULL,
+                                key_hash     TEXT NOT NULL,
+                                scopes_json  TEXT NOT NULL DEFAULT '{}',
+                                limits_json  TEXT NOT NULL DEFAULT '{}',
+                                status       TEXT NOT NULL DEFAULT 'active',
+                                created_ms   INTEGER NOT NULL,
+                                expires_ms   INTEGER NOT NULL DEFAULT 0,
+                                last_used_ms INTEGER NOT NULL DEFAULT 0
+                        )`,
 			`CREATE INDEX idx_vkeys_hash ON virtual_keys(key_hash)`,
 			`CREATE TABLE routing_rules (
-				id       TEXT PRIMARY KEY,
-				model_id TEXT NOT NULL,
-				policy   TEXT NOT NULL DEFAULT 'ordered',
-				enabled  INTEGER NOT NULL DEFAULT 1,
-				position INTEGER NOT NULL DEFAULT 0
-			)`,
+                                id       TEXT PRIMARY KEY,
+                                model_id TEXT NOT NULL,
+                                policy   TEXT NOT NULL DEFAULT 'ordered',
+                                enabled  INTEGER NOT NULL DEFAULT 1,
+                                position INTEGER NOT NULL DEFAULT 0
+                        )`,
 			`CREATE INDEX idx_rules_model ON routing_rules(model_id, position)`,
 			`CREATE TABLE requests (
-				id                TEXT PRIMARY KEY,
-				trace_id          TEXT NOT NULL,
-				vkey_id           TEXT NOT NULL DEFAULT '',
-				model_requested   TEXT NOT NULL DEFAULT '',
-				model_served      TEXT NOT NULL DEFAULT '',
-				provider_id       TEXT NOT NULL DEFAULT '',
-				status            TEXT NOT NULL,
-				error_code        TEXT NOT NULL DEFAULT '',
-				stream            INTEGER NOT NULL DEFAULT 0,
-				prompt_tokens     INTEGER NOT NULL DEFAULT 0,
-				completion_tokens INTEGER NOT NULL DEFAULT 0,
-				total_tokens      INTEGER NOT NULL DEFAULT 0,
-				cost_usd_micros   INTEGER NOT NULL DEFAULT 0,
-				latency_ms        INTEGER NOT NULL DEFAULT 0,
-				ttft_ms           INTEGER NOT NULL DEFAULT 0,
-				attempts          INTEGER NOT NULL DEFAULT 0,
-				created_ms        INTEGER NOT NULL
-			)`,
+                                id                TEXT PRIMARY KEY,
+                                trace_id          TEXT NOT NULL,
+                                vkey_id           TEXT NOT NULL DEFAULT '',
+                                model_requested   TEXT NOT NULL DEFAULT '',
+                                model_served      TEXT NOT NULL DEFAULT '',
+                                provider_id       TEXT NOT NULL DEFAULT '',
+                                status            TEXT NOT NULL,
+                                error_code        TEXT NOT NULL DEFAULT '',
+                                stream            INTEGER NOT NULL DEFAULT 0,
+                                prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+                                completion_tokens INTEGER NOT NULL DEFAULT 0,
+                                total_tokens      INTEGER NOT NULL DEFAULT 0,
+                                cost_usd_micros   INTEGER NOT NULL DEFAULT 0,
+                                latency_ms        INTEGER NOT NULL DEFAULT 0,
+                                ttft_ms           INTEGER NOT NULL DEFAULT 0,
+                                attempts          INTEGER NOT NULL DEFAULT 0,
+                                created_ms        INTEGER NOT NULL
+                        )`,
 			`CREATE INDEX idx_requests_created ON requests(created_ms DESC)`,
 			`CREATE INDEX idx_requests_vkey ON requests(vkey_id, created_ms DESC)`,
 			`CREATE TABLE usage_rollups (
-				bucket_start_ms   INTEGER NOT NULL,
-				vkey_id           TEXT NOT NULL DEFAULT '',
-				model_id          TEXT NOT NULL DEFAULT '',
-				provider_id       TEXT NOT NULL DEFAULT '',
-				requests          INTEGER NOT NULL DEFAULT 0,
-				errors            INTEGER NOT NULL DEFAULT 0,
-				prompt_tokens     INTEGER NOT NULL DEFAULT 0,
-				completion_tokens INTEGER NOT NULL DEFAULT 0,
-				total_tokens      INTEGER NOT NULL DEFAULT 0,
-				cost_usd_micros   INTEGER NOT NULL DEFAULT 0,
-				PRIMARY KEY (bucket_start_ms, vkey_id, model_id, provider_id)
-			)`,
+                                bucket_start_ms   INTEGER NOT NULL,
+                                vkey_id           TEXT NOT NULL DEFAULT '',
+                                model_id          TEXT NOT NULL DEFAULT '',
+                                provider_id       TEXT NOT NULL DEFAULT '',
+                                requests          INTEGER NOT NULL DEFAULT 0,
+                                errors            INTEGER NOT NULL DEFAULT 0,
+                                prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+                                completion_tokens INTEGER NOT NULL DEFAULT 0,
+                                total_tokens      INTEGER NOT NULL DEFAULT 0,
+                                cost_usd_micros   INTEGER NOT NULL DEFAULT 0,
+                                PRIMARY KEY (bucket_start_ms, vkey_id, model_id, provider_id)
+                        )`,
 		},
 	},
 	{
@@ -113,14 +113,29 @@ var migrations = []migration{
 		version: 3,
 		stmts: []string{
 			`CREATE INDEX idx_rollups_hot_window ON usage_rollups(
-				bucket_start_ms, requests, errors, prompt_tokens, completion_tokens, total_tokens, cost_usd_micros
-			)`,
+                                bucket_start_ms, requests, errors, prompt_tokens, completion_tokens, total_tokens, cost_usd_micros
+                        )`,
 			`CREATE INDEX idx_rollups_vkey_hot ON usage_rollups(
-				vkey_id, bucket_start_ms, requests, errors, prompt_tokens, completion_tokens, total_tokens, cost_usd_micros
-			)`,
+                                vkey_id, bucket_start_ms, requests, errors, prompt_tokens, completion_tokens, total_tokens, cost_usd_micros
+                        )`,
 			`CREATE INDEX idx_rollups_model_hot ON usage_rollups(
-				model_id, bucket_start_ms, requests, errors, prompt_tokens, completion_tokens, total_tokens, cost_usd_micros
-			)`,
+                                model_id, bucket_start_ms, requests, errors, prompt_tokens, completion_tokens, total_tokens, cost_usd_micros
+                        )`,
+		},
+	},
+	{
+		// p6.auth-sessions: dashboard admin accounts. Exactly one
+		// row is expected (first-run setup); password_hash is a
+		// PBKDF2-HMAC-SHA256 envelope produced by internal/auth —
+		// never a plaintext or reversible value.
+		version: 4,
+		stmts: []string{
+			`CREATE TABLE admin_users (
+                                id            TEXT PRIMARY KEY,
+                                username      TEXT NOT NULL UNIQUE,
+                                password_hash TEXT NOT NULL,
+                                created_ms    INTEGER NOT NULL
+                        )`,
 		},
 	},
 }
@@ -133,9 +148,9 @@ func CurrentVersion() int { return migrations[len(migrations)-1].version }
 // skipped. Fresh databases run every migration in order.
 func (s *Store) Migrate() error {
 	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
-		version    INTEGER PRIMARY KEY,
-		applied_ms INTEGER NOT NULL
-	)`); err != nil {
+                version    INTEGER PRIMARY KEY,
+                applied_ms INTEGER NOT NULL
+        )`); err != nil {
 		return fmt.Errorf("storage: migrate bootstrap: %w", err)
 	}
 

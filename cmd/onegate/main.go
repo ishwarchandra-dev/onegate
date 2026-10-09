@@ -213,18 +213,23 @@ func run() error {
 		Proxy: fallbackEngine,
 	})
 
-	// --- management API (p6.api-impl) ----------------------------------
+	// --- management API (p6.api-impl + p6.auth-sessions) ---------------
 	// Registered after the proxy endpoints; owns the whole /api/* subtree
-	// including the SSE log feed (moved here from direct mux registration).
+	// including the SSE log feed. Dashboard sessions are in-memory (a
+	// restart logs the dashboard out; the admin account is durable).
 	startedMS := time.Now().UnixMilli()
+	sessionStore := api.NewSessionManager(api.SessionTTLMS, nil)
 	api.Register(router.Mux(), api.Options{
-		Logger:         logger,
-		Store:          store,
-		Keys:           keyManager,
-		ProviderCipher: providerCipher,
-		AdminToken:     os.Getenv("ONEGATE_ADMIN_TOKEN"),
-		LogHub:         logHub,
-		Health:         healthTrackerView{tracker: healthTracker},
+		Logger:             logger,
+		Store:              store,
+		Keys:               keyManager,
+		ProviderCipher:     providerCipher,
+		AdminToken:         os.Getenv("ONEGATE_ADMIN_TOKEN"),
+		Sessions:           sessionStore,
+		PasswordHasher:     nil, // production PBKDF2 parameters
+		PasswordIterations: 0,   // default (auth.DefaultPasswordIterations)
+		LogHub:             logHub,
+		Health:             healthTrackerView{tracker: healthTracker},
 		Config: func() api.SystemConfig {
 			return api.SystemConfig{
 				Host:     cfg.Host,
