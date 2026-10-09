@@ -40,12 +40,16 @@ nodes:
   - id: p7.replay-harness
     title: "Replay diff harness: corpus → OneGate vs OmniRoute, byte/event diff"
     owner: qa-engineer
-    status: pending
+    status: done
     depends_on: [p7.capture-corpus]
     deliverables:
       - "scripts/parity/replay.py + normalized diff reporter"
     acceptance:
       - "Zero unexplained diffs on corpus; diffs classified blocker/cosmetic"
+    evidence:
+      - "scripts/parity/replay.py — stdlib-only harness: builds binaries, boots 2 mock providers + gateway, seeds via management API (rate-limit window aware), replays corpus (sequential/concurrent/abort steps), wildcard-normalized JSON + SSE frame diffing, post-checks against /api/requests, markdown report"
+      - "Baseline run 2026-10-09: 9/41 pass, 32 blocker diffs, 0 cosmetic — every diff maps to a catalogued checklist gap (report docs/reports/parity-replay.md); pass set = ingest-level auth/validation rows (C-1..C-5, C-13, C-15, A-10, A-12), confirming the two-root-cause analysis"
+      - "mockprovider gained GET /healthz for orchestration"
 
   - id: p7.parity-fixes
     title: "Parity fix cycle: resolve blockers surfaced by the harness"
