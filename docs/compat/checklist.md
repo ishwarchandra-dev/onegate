@@ -135,7 +135,7 @@ sections.
 | F-2 | Flags: `-host -port -data-dir -log-level -config` | parity | main.go flagset |
 | F-3 | `-version` prints `onegate <semver> (commit, date)`; `omniroute --version` printed `omniroute/3.8.52 …` — import prints a mapping note instead | parity (divergent string, documented) | `internal/version/version.go` |
 | F-4 | Exit codes: 0 success, 1 usage/runtime error, 2 bad flag | partial | Go flag pkg returns 2 for parse errors, main returns 1 otherwise — matches legacy |
-| F-5 | `onegate import <path> [--apply] [--data-dir …]` migrates a legacy install (new in OneGate; legacy had `omniroute export`) | parity | config import live (E-8 evidence); keys/usage history: p7.data-import in flight |
+| F-5 | `onegate import <path> [--apply] [--data-dir …]` migrates a legacy install (new in OneGate; legacy had `omniroute export`); `onegate import-keys` for keys + usage history | gap (blocker) | config import live (E-8 evidence); keys/usage history land with p7.data-import |
 | F-6 | SIGINT/SIGTERM graceful shutdown (drain in-flight, close storage) | parity | main.go signal.NotifyContext |
 | F-7 | `-h/--help` usage text lists all flags | parity | flag pkg default |
 
@@ -156,9 +156,9 @@ through the canonical core.
 
 ## Rollup
 
-- 79 rows: 73 parity, 4 partial (all cosmetic, documented), 1 n/a,
-  **1 gap (blocker)** — F-5's key/usage half, owned by `onegate import-keys`
-  (p7.data-import, in flight).
+- 79 rows: 72 parity, 4 partial (all cosmetic, documented), 1 n/a,
+  **1 gap (blocker)** — F-5's key/usage half, owned by
+  `onegate import-keys` (p7.data-import, in flight).
 - All 16 harness-surfaced blockers closed by p7.parity-fixes; the corpus
   (41 cases) replays clean: `python3 scripts/parity/replay.py` →
   41/41 pass, 0 blocker diffs (docs/reports/parity-replay.md).
@@ -170,3 +170,5 @@ through the canonical core.
   model echo, provider-model remap preserved upstream, stream truncation
   detection, no [DONE] after error frames, anthropic max_tokens ingest
   enforcement.
+- Config import live (p7.config-import): `onegate import` dry-run/apply,
+  idempotent, unmapped fields reported.
