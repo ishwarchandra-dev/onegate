@@ -37,8 +37,16 @@ cmd/onegate → internal/server → internal/proxy → internal/routing
                                internal/proxy → internal/protocol → internal/domain
                                internal/proxy → internal/stream
               internal/server → internal/{observability,version}
+              internal/api → internal/{storage,auth,observability,routing,domain,proxy/client}
               internal/auth → internal/storage → internal/domain
 ```
+
+The management plane (`internal/api`, Phase 6) is a sibling of
+`internal/proxy/ingest`: registered on the same mux by the composition
+root, it owns `/api/*` (dashboard control plane). It may import storage,
+auth, observability, routing, and `internal/proxy/client` (SSRF-guarded
+probes) but never `internal/server` or `internal/config` (callers pass
+resolved values — `api.SystemConfig` — through `api.Options`).
 
 Hard rules (from `docs/architecture.md` + ADRs in `docs/adr/`):
 
@@ -112,6 +120,7 @@ Request flow (canonical → provider → canonical):
 | `internal/domain/` | Canonical types + sentinel errors; imports nothing internal |
 | `internal/protocol/` | OpenAI/Anthropic/Gemini adapters, `sse`, `golden`, `conformance`; wire types confined here |
 | `internal/server/` | Go 1.22 `ServeMux`, middleware, request-ID/access-log/recover, `healthz`/`metrics` |
+| `internal/api/` | Management API (`/api/*`): spec-generated route table, admin-token auth, rate-limit classes, provider/model/key/usage/log handlers |
 | `internal/proxy/` | `ingest` (client-facing endpoints), `fallback` (engine), `nonstream` (buffered executor), `client` (upstream HTTP + SSRF guard) |
 | `internal/routing/` | Pure routing core: registry, policy, health circuit breakers, storage watcher |
 | `internal/stream/` | SSE pipeline: reader, flush-tracking writer, per-protocol stream adapters |
@@ -146,6 +155,10 @@ cd web && bun run build && bun run typecheck   # required dashboard gate
 # Task graph
 make graph                  # board + ready queue
 python3 scripts/graph_status.py --check        # integrity check; CI runs this
+
+# Management API contract (docs/api/openapi.yaml is the source of truth)
+make api-gen                # regenerate internal/api/spec_gen.go + web client
+make api-check              # CI: fail when generated artifacts are stale
 ```
 
 CI (`.github/workflows/ci.yaml`, push to main + all PRs) runs three parallel
@@ -266,9 +279,12 @@ and `make lint` are local gates (AGENTS.md, phase-gate docs), not CI jobs.
 
 - `docs/architecture.md`'s ADR table numbering predates the ADR files; treat
   `docs/adr/*.md` (002–005) as authoritative.
-- `docs/compat/` is referenced by the README but arrives in Phase 7;
-  `docs/api/` is currently empty.
+- `docs/compat/` is referenced by the README but arrives in Phase 7.
 - Provider-specific behavior notes: `docs/research/provider-quirks.md`,
   `docs/protocol-mappings.md`.
+- The management API contract is `docs/api/openapi.yaml`; route table
+  (`internal/api/spec_gen.go`) and web client (`web/app/lib/api/`) are
+  GENERATED from it — run `make api-gen` after spec changes, never edit
+  by hand (CI's `make api-check` fails on drift).
 - Dashboard embedding (`go:embed web/build`) is Phase 9 work — do not wire
   it early.

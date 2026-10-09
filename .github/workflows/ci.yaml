@@ -45,10 +45,19 @@ jobs:
         run: bun run build
 
   graph:
-    name: Task graph integrity
+    name: Task graph & API contract integrity
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install PyYAML
+        run: pip install pyyaml
+
       - name: Validate graph files
         run: python3 scripts/graph_status.py --check
+
+      - name: Check generated API artifacts are fresh
+        run: |
+          python3 scripts/gen_api_routes.py --check
+          python3 scripts/gen_api_client.py --check
+          python3 scripts/check_openapi.py

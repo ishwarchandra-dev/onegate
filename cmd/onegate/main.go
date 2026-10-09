@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ishwarchandra-dev/onegate/internal/api"
 	"github.com/ishwarchandra-dev/onegate/internal/auth"
 	"github.com/ishwarchandra-dev/onegate/internal/config"
 	"github.com/ishwarchandra-dev/onegate/internal/observability"
@@ -28,6 +29,7 @@ import (
 	"github.com/ishwarchandra-dev/onegate/internal/proxy/fallback"
 	"github.com/ishwarchandra-dev/onegate/internal/proxy/ingest"
 	"github.com/ishwarchandra-dev/onegate/internal/ratelimit"
+	"github.com/ishwarchandra-dev/onegate/internal/routing"
 	"github.com/ishwarchandra-dev/onegate/internal/server"
 	"github.com/ishwarchandra-dev/onegate/internal/storage"
 	"github.com/ishwarchandra-dev/onegate/internal/version"
@@ -123,6 +125,28 @@ func run() error {
 	}
 	verifier := auth.NewVerifier(store, pepper)
 
+	// --- auth: provider-key cipher + virtual-key manager (p6) ---------
+	providerCipher, err := auth.NewCipher(master, auth.PurposeProviderKeys)
+	if err != nil {
+		return err
+	}
+	keyManager := auth.NewManager(store, pepper)
+
+	// --- routing: registry + storage watcher + health (p4, wired p6) --
+	// The watcher polls storage and hot-swaps the registry snapshot, so
+	// dashboard writes (providers/models/rules) propagate to routing
+	// without a restart.
+	routingRegistry := routing.NewRegistry()
+	routingWatcher := routing.NewWatcher(routing.WatcherConfig{
+		Registry:     routingRegistry,
+		Source:       store.RoutingSource(),
+		PollInterval: time.Second,
+		Logger:       logger,
+	})
+	routingWatcher.Start(ctx)
+	defer routingWatcher.Stop()
+	healthTracker := routing.NewHealthTracker(routing.DefaultHealthConfig())
+
 	// --- usage pipeline: bounded queue + background writer (Phase 5) --
 	prices := ratelimit.NewPriceTable()
 	usagePipeline := observability.NewUsagePipeline(observability.UsagePipelineConfig{
@@ -188,7 +212,38 @@ func run() error {
 		Auth:  verifier,
 		Proxy: fallbackEngine,
 	})
-	router.Mux().Handle("GET /api/logs/live", logHub)
+
+	// --- management API (p6.api-impl) ----------------------------------
+	// Registered after the proxy endpoints; owns the whole /api/* subtree
+	// including the SSE log feed (moved here from direct mux registration).
+	startedMS := time.Now().UnixMilli()
+	api.Register(router.Mux(), api.Options{
+		Logger:         logger,
+		Store:          store,
+		Keys:           keyManager,
+		ProviderCipher: providerCipher,
+		AdminToken:     os.Getenv("ONEGATE_ADMIN_TOKEN"),
+		LogHub:         logHub,
+		Health:         healthTrackerView{tracker: healthTracker},
+		Config: func() api.SystemConfig {
+			return api.SystemConfig{
+				Host:     cfg.Host,
+				Port:     cfg.Port,
+				DataDir:  cfg.DataDir,
+				LogLevel: cfg.LogLevel,
+				HTTP: api.HTTPTimeouts{
+					ReadHeaderTimeoutMS: cfg.HTTP.ReadHeaderTimeoutMS,
+					ReadTimeoutMS:       cfg.HTTP.ReadTimeoutMS,
+					WriteTimeoutMS:      cfg.HTTP.WriteTimeoutMS,
+					IdleTimeoutMS:       cfg.HTTP.IdleTimeoutMS,
+				},
+				Reload: api.ReloadInfo{Enabled: cfg.Reload.Enabled, PollMS: cfg.Reload.PollMS},
+			}
+		},
+		StartedMS:     startedMS,
+		SchemaVersion: schemaVer,
+		Prober:        upstreamClient,
+	})
 	srv := router.Server(fmt.Sprintf("%s:%d", cfg.Host, cfg.Port))
 
 	errCh := make(chan error, 1)
@@ -211,4 +266,19 @@ func run() error {
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	}
+}
+
+// healthTrackerView adapts routing.HealthTracker onto the management
+// API's HealthView interface (composition-level glue; the api package
+// stays decoupled from routing internals beyond the view types).
+type healthTrackerView struct{ tracker *routing.HealthTracker }
+
+// State reports the circuit state for one (provider, model) target.
+func (v healthTrackerView) State(providerID, model string) routing.CircuitState {
+	return v.tracker.GetState(providerID, model)
+}
+
+// Events returns the most recent health transitions (newest last).
+func (v healthTrackerView) Events(limit int) []routing.HealthEvent {
+	return v.tracker.Events(limit)
 }

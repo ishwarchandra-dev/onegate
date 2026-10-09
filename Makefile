@@ -13,7 +13,7 @@ LDFLAGS := -X $(PKG)/internal/version.Version=$(VERSION) \
            -X $(PKG)/internal/version.GitCommit=$(COMMIT) \
            -X $(PKG)/internal/version.BuildDate=$(DATE)
 
-.PHONY: build run test vet fmt lint graph web-install web-dev web clean
+.PHONY: build run test vet fmt lint graph web-install web-dev web web-typecheck api-gen api-check clean
 
 ## build: compile the onegate binary into bin/
 build:
@@ -58,6 +58,16 @@ web:
 ## web-typecheck: typecheck the dashboard
 web-typecheck:
 	cd web && bun run typecheck
+
+## api-gen: regenerate Go route table + TS client from docs/api/openapi.yaml
+api-gen:
+	python3 scripts/gen_api_routes.py
+	python3 scripts/gen_api_client.py
+
+## api-check: verify generated artifacts are not stale (CI)
+api-check:
+	python3 scripts/gen_api_routes.py --check
+	python3 scripts/gen_api_client.py --check
 
 ## clean: remove build artifacts
 clean:

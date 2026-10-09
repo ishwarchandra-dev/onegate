@@ -27,12 +27,19 @@ nodes:
   - id: p6.api-impl
     title: "Management API handlers + generated TS client"
     owner: go-engineer
-    status: pending
+    status: done
     depends_on: [p6.api-spec]
     deliverables:
       - "internal/api handlers; codegen script for web client"
     acceptance:
       - "Handler conformance tests run against the spec (contract testing)"
+    evidence:
+      - "internal/api/spec_gen.go GENERATED from docs/api/openapi.yaml by scripts/gen_api_routes.py (35 routes); Register panics on spec/handler drift either direction; CI `make api-check` fails on stale artifacts"
+      - "Contract tests (internal/api/api_test.go): TestSpecRoutesAllRegistered (35/35), TestAuthClassEnforcement (per-route 401 without/with wrong token, pass with token, public never 401), TestRateLimitWriteClass (30/min budget, 429 + envelope, window reset via injectable clock), envelope shape/content-type checks"
+      - "Behavior tests (handlers_test.go): provider lifecycle (masked_key, no api_key echo, idempotent create, PATCH rotation semantics), SSRF-guarded probe against live httptest mock (per-protocol /models path + bearer; 401 detail surfaces), model replace validation (unknown provider 400), routing rules + health view, key show-once (raw never in list/get/patch; revoked key fails verify; revoke idempotent), usage summary/range/requests pagination (bucket-aligned), logs recent + filters, system status/config"
+      - "scripts/gen_api_client.py -> web/app/lib/api/{types,client}.ts: typed TS client, 35 methods, ApiError envelope, CSRF header plumbing; bun run build + typecheck green"
+      - "Full gate: go vet ./..., go test -count=1 ./... -race (21 packages ok), graph --check OK; live binary smoke test (healthz, 401 gate, provider CRUD, key mint, SSE 200)"
+      - "Session ops (login/setup/logout/session) reserved in spec, answer 503 until p6.auth-sessions; admin-token auth (ONEGATE_ADMIN_TOKEN) live now"
 
   - id: p6.auth-sessions
     title: "Dashboard auth: login, session cookies, CSRF, logout"

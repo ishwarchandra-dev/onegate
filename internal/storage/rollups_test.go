@@ -277,14 +277,14 @@ func TestRollups_RecomputeFromRaw(t *testing.T) {
 	baseTime := time.Date(2026, 10, 3, 10, 0, 0, 0, time.UTC).UnixMilli()
 	for i := 0; i < 20; i++ {
 		_ = repo.Insert(domain.RequestRecord{
-			ID:               fmt.Sprintf("recomp-%d", i),
-			TraceID:          fmt.Sprintf("recomp-%d", i),
-			VirtualKeyID:     "vkey-recomp",
-			ModelRequested:   "gpt-4o",
-			Status:           domain.RequestSuccess,
-			TotalTokens:      100,
-			CostUSDMicros:    200,
-			CreatedMS:        baseTime + int64(i*1000),
+			ID:             fmt.Sprintf("recomp-%d", i),
+			TraceID:        fmt.Sprintf("recomp-%d", i),
+			VirtualKeyID:   "vkey-recomp",
+			ModelRequested: "gpt-4o",
+			Status:         domain.RequestSuccess,
+			TotalTokens:    100,
+			CostUSDMicros:  200,
+			CreatedMS:      baseTime + int64(i*1000),
 		})
 	}
 

@@ -515,6 +515,21 @@ func (r *VirtualKeyRepo) UpdateLimits(id string, limits domain.KeyLimits) error 
 	return nil
 }
 
+// UpdateMeta updates mutable key metadata (display name, expiry) in one
+// statement. Zero expiresMS clears the expiry (never expires). Used by
+// the management API's PATCH /api/keys/{id} (p6.api-impl).
+func (r *VirtualKeyRepo) UpdateMeta(id, name string, expiresMS int64) error {
+	res, err := r.s.db.Exec(`UPDATE virtual_keys SET name = ?, expires_ms = ? WHERE id = ?`,
+		name, expiresMS, id)
+	if err != nil {
+		return fmt.Errorf("storage: update vkey meta: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func scanVKey(row rowScanner) (domain.VirtualKey, error) {
 	var k domain.VirtualKey
 	var scopes, limits, status string

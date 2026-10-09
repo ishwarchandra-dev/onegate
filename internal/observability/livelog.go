@@ -211,7 +211,8 @@ func (h *LogHub) Subscribe(filter LogFilter, bufferSize int) (*Subscription, fun
 
 // ServeHTTP serves the Server-Sent Events (SSE) live log feed.
 // Query parameters:
-//   - level: minimum log level ("debug", "info", "warn", "error")
+//   - min_level: minimum log level ("debug", "info", "warn", "error");
+//     "level" is accepted as a legacy alias (pre-p6 clients)
 //   - trace_id: filter by specific trace ID
 //   - provider: filter by provider ID
 //   - history: number of historical entries to pre-populate from ring (default: 50, max: 500)
@@ -223,8 +224,12 @@ func (h *LogHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
+	minLevel := query.Get("min_level")
+	if minLevel == "" {
+		minLevel = query.Get("level")
+	}
 	filter := LogFilter{
-		MinLevel: query.Get("level"),
+		MinLevel: minLevel,
 		TraceID:  query.Get("trace_id"),
 		Provider: query.Get("provider"),
 	}
