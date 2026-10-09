@@ -5,5 +5,6 @@ export default [
   layout("routes/_dashboard.tsx", [
     route("providers", "routes/providers.tsx"),
     route("routing", "routes/routing.tsx"),
+    route("keys", "routes/keys.tsx"),
   ]),
 ] satisfies RouteConfig
