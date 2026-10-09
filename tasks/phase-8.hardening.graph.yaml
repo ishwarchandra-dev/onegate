@@ -53,12 +53,15 @@ nodes:
   - id: p8.crash-recovery
     title: "Crash recovery matrix: kill -9 at request/commit/migration moments; WAL recovery"
     owner: chaos-engineer
-    status: pending
+    status: done
     depends_on: [p7.gate]
     deliverables:
       - "Crash test suite + reconciliation report (usage, keys, health)"
     acceptance:
       - "Post-restart state converges; in-flight usage reconciled or accounted"
+    evidence:
+      - "scripts/chaos/crash.py — idle-kill, midflight-kill (4 workers, ~1100 req/s), migration-kill (SIGKILL racing first-boot migration)"
+      - "docs/reports/crash-recovery.md — 3/3 converge: idle state byte-identical; midflight 6646/6646 client-confirmed requests durable after kill -9 (zero loss; unconfirmed in-flight accounted by absence, documented); migration-kill restart completes schema v5 and serves; mechanism summary (WAL, transactional migrations, 100ms batch flush)"
 
   - id: p8.security-review
     title: "Security review: threat model refresh, auth audit, SSRF re-check, dependency CVEs"
