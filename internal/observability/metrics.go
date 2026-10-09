@@ -1,6 +1,11 @@
 package observability
 
 import (
+	"os"
+	"runtime"
+	"runtime/pprof"
+	"strconv"
+
 	"crypto/subtle"
 	"fmt"
 	"net/http"
@@ -347,6 +352,20 @@ func (reg *Registry) render(b *strings.Builder) {
 		fmt.Fprintf(b, "onereq_inflight_requests{protocol=%q} %d\n", k, val)
 	}
 
+	// 4b. Runtime health gauges (p8 hardening: soak monitors goroutine
+	// and fd stability directly from /metrics).
+	b.WriteString("# HELP onereq_go_goroutines Current goroutine count (leak detection for soak tests).\n")
+	b.WriteString("# TYPE onereq_go_goroutines gauge\n")
+	fmt.Fprintf(b, "onereq_go_goroutines %d\n", runtime.NumGoroutine())
+
+	b.WriteString("# HELP onereq_go_os_threads Current OS thread count.\n")
+	b.WriteString("# TYPE onereq_go_os_threads gauge\n")
+	fmt.Fprintf(b, "onereq_go_os_threads %d\n", osThreads())
+
+	b.WriteString("# HELP onereq_process_open_fds Open file descriptors (Linux; connection-leak detection).\n")
+	b.WriteString("# TYPE onereq_process_open_fds gauge\n")
+	fmt.Fprintf(b, "onereq_process_open_fds %d\n", countOpenFDs())
+
 	// 5. onereq_quota_rejections_total
 	b.WriteString("# HELP onereq_quota_rejections_total Total requests rejected due to rate limits or quota exhaustion. Dashboard consumer: Virtual Keys view quota warning banner, Rate limits alert panel.\n")
 	b.WriteString("# TYPE onereq_quota_rejections_total counter\n")
@@ -462,3 +481,22 @@ func (reg *Registry) getOrInitHistogram(m *map[string]*Histogram, key string, bu
 	(*m)[key] = h
 	return h
 }
+
+// osThreads reports the current OS thread count from the runtime's
+// thread-create profile (no allocation beyond the count).
+func osThreads() int {
+	return pprof.Lookup("threadcreate").Count()
+}
+
+// countOpenFDs counts the process's open file descriptors. On Linux it
+// reads /proc/self/fd; elsewhere it reports 0 (gauge absent in practice
+// on non-Linux dev boxes, which is acceptable for soak monitoring).
+func countOpenFDs() int {
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		return 0
+	}
+	return len(entries)
+}
+
+var _ = strconv.Itoa // keep strconv if future edits use it

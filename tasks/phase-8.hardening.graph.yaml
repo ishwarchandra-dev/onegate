@@ -13,12 +13,15 @@ nodes:
   - id: p8.load-soak
     title: "Load test: sustained RPS soak (mixed stream/non-stream) with budget report"
     owner: performance-engineer
-    status: pending
+    status: done
     depends_on: [p7.gate]
     deliverables:
       - "scripts/loadtests/soak + results with p50/p95/p99 TTFT and throughput"
     acceptance:
       - "No latency budget regression >10%; no goroutine/fd growth over soak"
+    evidence:
+      - "scripts/loadtests/soak.py — mixed stream/non-stream load at target RPS, dedicated raw-socket TTFT probes, 1 Hz resource sampling from /metrics; runtime gauges added (onereq_go_goroutines/os_threads/open_fds)"
+      - "docs/reports/load-soak.md — 60s @ 60rps: 3600/3600, 0 errors, p99 2.3ms, TTFT p99 2.0ms, resource growth within noise (all 7 budgets PASS); 30s @ 30rps stability run same picture"
 
   - id: p8.load-burst
     title: "Load test: burst + stream-churn scenarios; graceful degradation behavior"
