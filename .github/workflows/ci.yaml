@@ -61,3 +61,38 @@ jobs:
           python3 scripts/gen_api_routes.py --check
           python3 scripts/gen_api_client.py --check
           python3 scripts/check_openapi.py
+
+  e2e:
+    name: Dashboard E2E (playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build gateway
+        run: make build
+
+      - name: Install dashboard dependencies
+        working-directory: web
+        run: bun install
+
+      - name: Build dashboard
+        working-directory: web
+        run: bun run build
+
+      - name: Install playwright browsers
+        working-directory: web
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run E2E journeys
+        working-directory: web
+        run: bun run e2e
+        env:
+          CI: true

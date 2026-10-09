@@ -26,7 +26,6 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table"
-import { AsyncPage } from "~/components/data-state"
 import { TableSkeleton } from "~/components/skeletons"
 import { api, ApiError, formatMS } from "~/lib/api"
 import type { T } from "~/lib/api"
@@ -92,6 +91,7 @@ export default function ProvidersView() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
       <div className="flex items-center justify-between gap-4">
+        <h1 className="text-lg font-semibold">Providers</h1>
         <div className="flex gap-2">
           <Button size="sm" onClick={() => setEditing("new")}>
             Add provider

@@ -249,6 +249,10 @@ func (h *LogHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
+	// Greeting frame: immediate body bytes so reverse proxies (which may
+	// buffer a headers-only flush) and browsers see the stream at once,
+	// plus the SSE reconnect hint.
+	fmt.Fprintf(w, ": connected\nretry: 3000\n\n")
 	flusher.Flush()
 
 	// 1. Emit recent history from ring buffer
@@ -286,7 +290,9 @@ func (h *LogHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			// Acceptance: Slow dashboard subscriber never backpressures the proxy (drops, notifies)
 			if dropped := sub.dropped.Swap(0); dropped > 0 {
-				fmt.Fprintf(w, "event: dropped\ndata: {\"dropped\":%d}\n\n", dropped)
+				// Payload key "count" per the OpenAPI contract (docs/api/openapi.yaml
+				// /api/logs/live description).
+				fmt.Fprintf(w, "event: dropped\ndata: {\"count\":%d}\n\n", dropped)
 			}
 			data, err := json.Marshal(entry)
 			if err == nil {

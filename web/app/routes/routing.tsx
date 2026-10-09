@@ -431,7 +431,6 @@ function ModelDialog({
                     }
                     placeholder="provider model name"
                     className="flex-1"
-                    required
                   />
                   <Input
                     type="number"

@@ -11,4 +11,11 @@ export default defineConfig({
       "/api": "http://127.0.0.1:7420",
     },
   },
+  preview: {
+    // E2E (p6.e2e-dashboard): `vite preview` serves the production build
+    // with the same /api proxy the dev server uses.
+    proxy: {
+      "/api": "http://127.0.0.1:7420",
+    },
+  },
 })

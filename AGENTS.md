@@ -151,6 +151,8 @@ go test ./internal/protocol/openai/ -run TestName   # single package/test
 make web-install            # bun install
 make web-dev                # vite :5173, proxies /api -> 127.0.0.1:7420
 cd web && bun run build && bun run typecheck   # required dashboard gate
+cd web && bun run e2e       # playwright journeys (CI e2e job): builds must
+                            # exist — `make build` at root + `bun run build`
 
 # Task graph
 make graph                  # board + ready queue
@@ -161,10 +163,12 @@ make api-gen                # regenerate internal/api/spec_gen.go + web client
 make api-check              # CI: fail when generated artifacts are stale
 ```
 
-CI (`.github/workflows/ci.yaml`, push to main + all PRs) runs three parallel
+CI (`.github/workflows/ci.yaml`, push to main + all PRs) runs four parallel
 jobs — **go** (`go build/vet/test`), **web** (`bun install` + `bun run
-build`), **graph** (`graph_status.py --check`). Keep all three green. `-race`
-and `make lint` are local gates (AGENTS.md, phase-gate docs), not CI jobs.
+build`), **graph** (`graph_status.py --check` + generated-artifact freshness),
+**e2e** (playwright journeys: real gateway binary + built dashboard + mock
+provider). Keep all four green. `-race` and `make lint` are local gates
+(AGENTS.md, phase-gate docs), not CI jobs.
 
 ## Code Conventions & Common Patterns
 
@@ -272,8 +276,9 @@ and `make lint` are local gates (AGENTS.md, phase-gate docs), not CI jobs.
   `internal/stream/ttft_bench_test.go`. Perf work: 3 runs, >10% regression
   blocks done.
 - Coverage expectations live in the qa-engineer charter (≥90% domain/protocol,
-  ≥80% overall); no CI coverage gate or web test runner exists — the web gate
-  is `bun run build && bun run typecheck` only.
+  ≥80% overall); no CI coverage gate exists. The web gates are `bun run build
+  && bun run typecheck` plus the playwright E2E journeys (`bun run e2e`,
+  p6.e2e-dashboard) — every dashboard route must be covered by a journey.
 
 ## Gotchas
 

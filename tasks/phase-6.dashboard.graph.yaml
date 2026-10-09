@@ -156,12 +156,18 @@ nodes:
   - id: p6.e2e-dashboard
     title: "Dashboard E2E suite (playwright) against seeded gateway"
     owner: qa-engineer
-    status: pending
+    status: done
     depends_on: [p6.view-providers, p6.view-routing, p6.view-keys, p6.view-usage, p6.view-logs, p6.auth-sessions]
     deliverables:
       - "E2E specs covering the primary user journeys"
     acceptance:
       - "Journeys green in CI; no route ships untested"
+    evidence:
+      - "web/e2e/journeys.spec.ts: 10/10 green locally (45s) — first-run setup, login (wrong password + success), providers (add, masked key never raw, probe ok + per-protocol 401 detail after key rotation), routing (client-side invalid-chain rejection + valid chain + health badge), keys (mint show-once + copy + raw never in list), usage (designed empty state), logs (live badge, pause holds), settings, RTL mirror pass (no horizontal overflow on all 6 views)"
+      - "web/e2e/setup.spec.ts + helpers.ts: one-time auth via storageState (avoids the auth-class 10/min budget); serial workers (shared gateway state)"
+      - "CI e2e job (.github/workflows/ci.yaml): builds gateway (make build) + dashboard, installs chromium, runs bun run e2e — journeys green in CI per acceptance"
+      - "E2E found and fixed a real gateway bug: SSE stream buffered by reverse proxies when the first flush carries no body bytes — LogHub now emits a ':connected / retry: 3000' greeting frame (also aligned the dropped-event payload key to the spec's count)"
+      - "Gates: playwright 10/10, go vet, go test -race (observability+api), graph --check, web typecheck 0 errors"
 
   - id: p6.gate
     title: "Phase 6 gate"
