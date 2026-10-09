@@ -95,12 +95,14 @@ nodes:
   - id: p7.parity-report
     title: "Parity report & sign-offs per area (proxy, routing, keys, config, CLI)"
     owner: compatibility-auditor
-    status: pending
+    status: done
     depends_on: [p7.parity-fixes, p7.data-import]
     deliverables:
       - "docs/compat/report-phase7.md"
     acceptance:
       - "Blocker count zero; cosmetic items have task nodes or waivers"
+    evidence:
+      - "docs/compat/report-phase7.md — five signed areas (proxy, routing, keys, config, CLI), blocker count zero (73 parity / 4 partial-cosmetic / 1 n-a / 79 rows), cosmetic register with migration notes, 2 tracked non-parity limitations (alias-keyed pricing -> p8 input, in-memory windows by design)"
 
   - id: p7.gate
     title: "Phase 7 gate"
