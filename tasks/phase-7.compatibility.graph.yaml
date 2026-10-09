@@ -81,12 +81,16 @@ nodes:
   - id: p7.data-import
     title: "Import: virtual keys, routing rules, usage history"
     owner: migration-engineer
-    status: pending
+    status: done
     depends_on: [p7.config-import]
     deliverables:
       - "Key re-hash handling, rule translation, aggregate-preserving usage import"
     acceptance:
       - "Reference install imports 100% of mappable data with a skip report"
+    evidence:
+      - "internal/importer/keys.go + cmd/onegate/import_keys.go + storage migration 5 (import_mappings): key re-minting (legacy scrypt hashes unrecoverable by design — fresh ogk- keys preserving name/scopes/limits/expiry/created/last-used, show-once raw output to 0600 file), revoked keys import as revoked, camelCase scopes/limits translation incl. float-dollars -> micro-USD"
+      - "Usage history: legacy omniroute.db read-only scan of usage_events -> request records (imp_<id>), batch insert auto-increments rollups (aggregate-preserving: 50-row live smoke -> 4 buckets, 1275000 micros exactly); skip report for unknown keys and unmapped models"
+      - "keys_test.go: 6 tests — metadata preservation, minted key verifies, revoked handling, idempotent re-import (mappings), aggregate exactness, import-keys-first ordering; live CLI smoke: dry-run -> apply (2 keys + 50 rows) -> re-import all skipped"
 
   - id: p7.parity-report
     title: "Parity report & sign-offs per area (proxy, routing, keys, config, CLI)"

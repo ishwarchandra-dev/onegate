@@ -138,6 +138,22 @@ var migrations = []migration{
                         )`,
 		},
 	},
+	{
+		// p7.data-import: legacy OmniRoute id mapping. Every imported
+		// legacy entity records its OneGate counterpart here — the
+		// idempotency and skip-report source of truth for
+		// `onegate import-keys`.
+		version: 5,
+		stmts: []string{
+			`CREATE TABLE import_mappings (
+                                legacy_kind TEXT NOT NULL,
+                                legacy_id   TEXT NOT NULL,
+                                onegate_id  TEXT NOT NULL,
+                                imported_ms INTEGER NOT NULL,
+                                PRIMARY KEY (legacy_kind, legacy_id)
+                        )`,
+		},
+	},
 }
 
 // CurrentVersion is the schema version this binary understands.
