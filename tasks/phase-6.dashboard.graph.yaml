@@ -2,7 +2,7 @@
 phase: 6
 name: dashboard
 title: "Phase 6 — Management API & Dashboard UI"
-status: pending
+status: done
 gate:
   - "OpenAPI spec is the contract; TS client generated from it"
   - "Core views shipped: providers, models & routing, keys, usage, logs, settings"
@@ -172,9 +172,13 @@ nodes:
   - id: p6.gate
     title: "Phase 6 gate"
     owner: graph-master
-    status: pending
+    status: done
     depends_on: [p6.api-spec, p6.api-impl, p6.auth-sessions, p6.design-system, p6.view-providers, p6.view-routing, p6.view-keys, p6.view-usage, p6.view-logs, p6.e2e-dashboard]
     deliverables:
       - "Gate report"
     acceptance:
       - "All gate criteria verified"
+    evidence:
+      - "docs/gates/phase-6.md — all four gate criteria verified PASS with per-criterion evidence"
+      - "Verification: go vet, go test -race (22 pkgs), make api-check, graph --check (61/86 nodes), check_contrast 56/56, web build+typecheck, e2e 10/10"
+      - "Carried observations recorded for graph-master: data-plane dynamic-resolver wiring gap (pre-existing; candidate p7 node), in-memory sessions by design"
