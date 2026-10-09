@@ -69,15 +69,17 @@ export function EmptyState(props: StateProps) {
 export function ErrorState({
   message,
   onRetry,
+  title,
   ...props
-}: Omit<StateProps, "description" | "action"> & {
+}: Omit<StateProps, "description" | "action" | "title"> & {
   message?: string
   onRetry?: () => void
+  title?: string
 }) {
   return (
     <StateShell
       data-slot="error-state"
-      title={props.title ?? "Something went wrong"}
+      title={title ?? "Something went wrong"}
       description={
         message ?? "The request failed. Check the gateway logs and retry."
       }

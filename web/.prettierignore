@@ -5,3 +5,5 @@ pnpm-lock.yaml
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
+app/lib/api/client.ts
+app/lib/api/types.ts
