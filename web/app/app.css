@@ -16,11 +16,24 @@
     --color-sidebar-primary: var(--sidebar-primary);
     --color-sidebar-foreground: var(--sidebar-foreground);
     --color-sidebar: var(--sidebar);
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
+    --color-warning: var(--warning);
+    --color-warning-foreground: var(--warning-foreground);
+    --color-skeleton: var(--skeleton);
+    --color-chart-8: var(--chart-8);
+    --color-chart-7: var(--chart-7);
+    --color-chart-6: var(--chart-6);
     --color-chart-5: var(--chart-5);
     --color-chart-4: var(--chart-4);
     --color-chart-3: var(--chart-3);
     --color-chart-2: var(--chart-2);
     --color-chart-1: var(--chart-1);
+    --color-chart-grid: var(--chart-grid);
+    --color-chart-axis: var(--chart-axis);
+    --color-chart-tooltip: var(--chart-tooltip);
+    --color-chart-tooltip-foreground: var(--chart-tooltip-foreground);
+    --color-chart-crosshair: var(--chart-crosshair);
     --color-ring: var(--ring);
     --color-input: var(--input);
     --color-border: var(--border);
@@ -48,6 +61,22 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * OneGate design tokens — single source of truth.
+ *
+ * Rules (docs/design-system.md):
+ *   - Change colors ONLY in the :root / .dark blocks below. Never hardcode
+ *     hex/oklch values in components.
+ *   - Light and dark blocks define the SAME token set (parity is checked
+ *     by scripts/check_contrast.py).
+ *   - Chart palette is categorical: 8 hues chosen for pairwise
+ *     distinguishability; chart-1 is the brand green. Series beyond 8
+ *     repeat from chart-1 (dashboard data rarely exceeds 8 series).
+ *   - Status colors: success (circuit closed / healthy), warning
+ *     (half-open / degraded), destructive (open / failed / revoked).
+ *   - All spacing/positioning in components uses logical properties
+ *     (ps/pe/ms/me/start/end) so RTL mirrors automatically.
+ */
 :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.141 0.005 285.823);
@@ -55,32 +84,50 @@
     --card-foreground: oklch(0.141 0.005 285.823);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.141 0.005 285.823);
-    --primary: oklch(0.841 0.238 128.85);
-    --primary-foreground: oklch(0.405 0.101 131.063);
+    --primary: oklch(0.532 0.157 151.684);
+    --primary-foreground: oklch(0.985 0.005 120);
     --secondary: oklch(0.967 0.001 286.375);
     --secondary-foreground: oklch(0.21 0.006 285.885);
     --muted: oklch(0.967 0.001 286.375);
-    --muted-foreground: oklch(0.552 0.016 285.938);
+    --muted-foreground: oklch(0.489 0.016 285.94);
     --accent: oklch(0.967 0.001 286.375);
     --accent-foreground: oklch(0.21 0.006 285.885);
-    --destructive: oklch(0.577 0.245 27.325);
+    --destructive: oklch(0.577 0.215 27.32);
+    --success: oklch(0.53 0.14 151);
+    --success-foreground: oklch(0.985 0.005 120);
+    --warning: oklch(0.55 0.13 62);
+    --warning-foreground: oklch(0.99 0.01 95);
     --border: oklch(0.92 0.004 286.32);
     --input: oklch(0.92 0.004 286.32);
-    --ring: oklch(0.705 0.015 286.067);
-    --chart-1: oklch(0.897 0.196 126.665);
-    --chart-2: oklch(0.768 0.233 130.85);
-    --chart-3: oklch(0.648 0.2 131.684);
-    --chart-4: oklch(0.532 0.157 131.589);
-    --chart-5: oklch(0.453 0.124 130.933);
+    --ring: oklch(0.55 0.12 151);
+    --skeleton: oklch(0.936 0.002 286.4);
+
+    /* Categorical chart palette — 8 hues, WCAG 1.4.11 (>=3:1 on --card). */
+    --chart-1: oklch(0.53 0.15 151);   /* brand green      */
+    --chart-2: oklch(0.52 0.14 255);   /* blue             */
+    --chart-3: oklch(0.54 0.17 300);   /* violet           */
+    --chart-4: oklch(0.65 0.135 62);   /* amber            */
+    --chart-5: oklch(0.58 0.10 215);   /* cyan             */
+    --chart-6: oklch(0.58 0.18 15);    /* rose             */
+    --chart-7: oklch(0.48 0.14 275);   /* indigo           */
+    --chart-8: oklch(0.60 0.12 110);   /* lime             */
+
+    /* Chart chrome — grid lines, axis labels, tooltip, crosshair. */
+    --chart-grid: oklch(0.92 0.004 286.32);
+    --chart-axis: oklch(0.489 0.016 285.94);
+    --chart-tooltip: oklch(0.21 0.006 285.885);
+    --chart-tooltip-foreground: oklch(0.985 0 0);
+    --chart-crosshair: oklch(0.705 0.015 286.067);
+
     --radius: 0.625rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.141 0.005 285.823);
-    --sidebar-primary: oklch(0.648 0.2 131.684);
-    --sidebar-primary-foreground: oklch(0.986 0.031 120.757);
+    --sidebar-primary: oklch(0.532 0.157 151.684);
+    --sidebar-primary-foreground: oklch(0.985 0.005 120);
     --sidebar-accent: oklch(0.967 0.001 286.375);
     --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
     --sidebar-border: oklch(0.92 0.004 286.32);
-    --sidebar-ring: oklch(0.705 0.015 286.067);
+    --sidebar-ring: oklch(0.55 0.12 151);
 }
 
 .dark {
@@ -90,31 +137,48 @@
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.21 0.006 285.885);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.768 0.233 130.85);
-    --primary-foreground: oklch(0.405 0.101 131.063);
+    --primary: oklch(0.768 0.17 152);
+    --primary-foreground: oklch(0.22 0.05 152);
     --secondary: oklch(0.274 0.006 286.033);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.274 0.006 286.033);
-    --muted-foreground: oklch(0.705 0.015 286.067);
+    --muted-foreground: oklch(0.712 0.013 286.067);
     --accent: oklch(0.274 0.006 286.033);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
+    --success: oklch(0.75 0.16 152);
+    --success-foreground: oklch(0.22 0.05 152);
+    --warning: oklch(0.79 0.14 75);
+    --warning-foreground: oklch(0.25 0.05 75);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.552 0.016 285.938);
-    --chart-1: oklch(0.897 0.196 126.665);
-    --chart-2: oklch(0.768 0.233 130.85);
-    --chart-3: oklch(0.648 0.2 131.684);
-    --chart-4: oklch(0.532 0.157 131.589);
-    --chart-5: oklch(0.453 0.124 130.933);
+    --ring: oklch(0.768 0.17 152);
+    --skeleton: oklch(0.262 0.006 286.033);
+
+    /* Same 8 hues, lightness lifted for dark surfaces (>=3:1 on --card). */
+    --chart-1: oklch(0.75 0.15 152);
+    --chart-2: oklch(0.70 0.13 250);
+    --chart-3: oklch(0.72 0.16 300);
+    --chart-4: oklch(0.80 0.14 70);
+    --chart-5: oklch(0.75 0.10 215);
+    --chart-6: oklch(0.72 0.16 15);
+    --chart-7: oklch(0.68 0.13 275);
+    --chart-8: oklch(0.78 0.12 110);
+
+    --chart-grid: oklch(1 0 0 / 10%);
+    --chart-axis: oklch(0.712 0.013 286.067);
+    --chart-tooltip: oklch(0.985 0 0);
+    --chart-tooltip-foreground: oklch(0.141 0.005 285.823);
+    --chart-crosshair: oklch(0.552 0.016 285.938);
+
     --sidebar: oklch(0.21 0.006 285.885);
     --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.768 0.233 130.85);
-    --sidebar-primary-foreground: oklch(0.274 0.072 132.109);
+    --sidebar-primary: oklch(0.768 0.17 152);
+    --sidebar-primary-foreground: oklch(0.22 0.05 152);
     --sidebar-accent: oklch(0.274 0.006 286.033);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.552 0.016 285.938);
+    --sidebar-ring: oklch(0.768 0.17 152);
 }
 
 @layer base {
@@ -129,5 +193,31 @@
     }
   html {
     @apply font-sans;
+    }
+  /* Numeric data (tokens, costs, latency) aligns in tables. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    }
+}
+
+/*
+ * Skeleton shimmer — direction-neutral (opacity pulse only), so it is
+ * inherently RTL-safe: no gradient axis to mirror. Disabled under
+ * prefers-reduced-motion.
+ */
+@layer components {
+  .og-skeleton {
+    background-color: var(--skeleton);
+    animation: og-skeleton-pulse 1.6s ease-in-out infinite;
+    border-radius: var(--radius-sm);
+    }
+  @keyframes og-skeleton-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+    }
+  @media (prefers-reduced-motion: reduce) {
+    .og-skeleton {
+      animation: none;
+      }
     }
 }

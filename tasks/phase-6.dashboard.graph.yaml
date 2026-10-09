@@ -47,12 +47,18 @@ nodes:
   - id: p6.design-system
     title: "Dashboard design system: tokens, charts, empty/loading states"
     owner: design-engineer
-    status: pending
+    status: done
     depends_on: [p0.gate]
     deliverables:
       - "app.css token set, chart palette, skeleton components"
     acceptance:
       - "Dark/light parity; AA contrast; RTL-safe patterns documented"
+    evidence:
+      - "scripts/check_contrast.py — parses app.css, oklch->sRGB, verifies 56/56 committed pairings AA in BOTH modes (text >=4.5:1, chart series/ring >=3:1); token parity light<->dark enforced"
+      - "web/app/app.css — full token set (status success/warning/destructive, 8-hue categorical chart palette + chart chrome tokens, skeleton token) with identical light/dark token names"
+      - "web/app/components/{ui/skeleton,skeletons,states}.tsx — skeleton primitive + TableSkeleton/StatCardSkeleton/ChartSkeleton/FormSkeleton/LogStreamSkeleton/PageSkeleton + EmptyState/ErrorState/StreamGapIndicator; logical properties only; pulse animation (direction-neutral) disabled under prefers-reduced-motion"
+      - "web/docs/design-system.md — token tables, chart language, density contract, dark/light parity rules, AA evidence table, RTL-safe pattern rules (logical properties, icon mirroring, LTR charts, .tnum)"
+      - "cd web && bun run build && bun run typecheck — green (dashboard gate)"
 
   - id: p6.view-providers
     title: "Providers view: list, add/edit (masked keys), enable/disable, test connection"

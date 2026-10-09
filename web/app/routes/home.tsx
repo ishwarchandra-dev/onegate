@@ -11,8 +11,8 @@ export default function Home() {
             single binary with this dashboard embedded.
           </p>
           <p className="text-muted-foreground">
-            Phase 0 scaffold. Provider management, virtual keys, routing
-            rules, usage analytics and live logs arrive in later phases — see{" "}
+            Phase 0 scaffold. Provider management, virtual keys, routing rules,
+            usage analytics and live logs arrive in later phases — see{" "}
             <code>tasks/</code> in the repo root.
           </p>
           <div className="mt-2 flex gap-2">
