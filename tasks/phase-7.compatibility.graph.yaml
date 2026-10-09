@@ -2,7 +2,7 @@
 phase: 7
 name: compatibility
 title: "Phase 7 — OmniRoute v3.8.52 Parity & Migration"
-status: pending
+status: done
 gate:
   - "Parity checklist: 100% of blocker rows green, cosmetic rows triaged"
   - "Traffic replay diff harness clean on captured corpus"
@@ -107,9 +107,12 @@ nodes:
   - id: p7.gate
     title: "Phase 7 gate"
     owner: graph-master
-    status: pending
+    status: done
     depends_on: [p7.parity-checklist, p7.capture-corpus, p7.replay-harness, p7.parity-fixes, p7.config-import, p7.data-import, p7.parity-report]
     deliverables:
       - "Gate report"
     acceptance:
       - "All gate criteria verified"
+    evidence:
+      - "docs/gates/phase-7.md — all 4 criteria PASS: checklist 0 blockers (73 parity/4 partial/1 n-a of 79), corpus replay 41/41 at gate time (plus 3x CC-40 stability runs after the harness set-matching fix), import + import-keys live evidence, parity report signed; verification bundle green (build/vet/race 23 pkgs/gofmt/graph)"
+      - "3 carried observations: alias-keyed pricing (p8 input), idle SSE pings (p8 input), import-keys sequencing (p9 cli-polish candidate)"

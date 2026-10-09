@@ -337,15 +337,16 @@ def check_expect(expect: dict, info: dict) -> list[str]:
 # Case execution
 # ---------------------------------------------------------------------------
 
-def run_step(step: dict, ctx: Ctx) -> tuple[str, list[str]]:
+def run_step(step: dict, ctx: Ctx) -> tuple[str, list[str], dict | None]:
+    """Execute one step. Returns (name, errors, response-info)."""
     name = step.get("name", "step")
     if "expect" not in step:
         execute_step(step, ctx)
-        return name, []
+        return name, [], None
     info = execute_step(step, ctx)
     if info.get("aborted"):
-        return name, []
-    return name, check_expect(step["expect"], info)
+        return name, [], None
+    return name, check_expect(step["expect"], info), info
 
 
 def run_post(post: dict, ctx: Ctx) -> list[str]:
@@ -384,23 +385,35 @@ def run_case(case: dict, ctx: Ctx) -> dict:
             t.start()
         for t in threads:
             t.join()
-        # Concurrent expectations match as a set: each expect consumes one
-        # error-free result; the leftovers carry the reported errors.
+        # Concurrent expectations match as a SET: each step's expect may be
+        # satisfied by ANY response (which request wins the race is
+        # nondeterministic). Leftover responses carry the reported errors.
         remaining = [r for r in results if r is not None]
         for step in steps:
-            match = next((r for r in remaining if not r[1]), None)
+            expect = step.get("expect")
+            if expect is None:
+                if remaining:
+                    remaining.pop(0)
+                result["steps"].append({"name": step.get("name", "step"), "ok": True})
+                continue
+            match = None
+            for r in remaining:
+                if r[2] is not None and not check_expect(expect, r[2]):
+                    match = r
+                    break
             if match is not None:
                 remaining.remove(match)
                 result["steps"].append({"name": step.get("name", "step"), "ok": True})
             else:
-                bad = remaining[0] if remaining else ("?", ["no matching response"])
-                remaining = remaining[1:]
+                errs = remaining[0][1] if remaining else ["no matching response"]
+                if remaining:
+                    remaining.pop(0)
                 result["steps"].append({"name": step.get("name", "step"), "ok": False,
-                                        "errors": bad[1]})
+                                        "errors": errs})
                 result["ok"] = False
     else:
         for step in steps:
-            name, errs = run_step(step, ctx)
+            name, errs, _ = run_step(step, ctx)
             entry = {"name": name, "ok": not errs}
             if errs:
                 entry["errors"] = errs
