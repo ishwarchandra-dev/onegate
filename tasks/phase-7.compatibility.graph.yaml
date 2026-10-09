@@ -67,12 +67,16 @@ nodes:
   - id: p7.config-import
     title: "Import: omniroute.json → OneGate config + provider settings"
     owner: migration-engineer
-    status: pending
+    status: done
     depends_on: [p7.parity-checklist]
     deliverables:
       - "onegate import --dry-run/--apply with diff report"
     acceptance:
       - "Idempotent; legacy install untouched; unmapped fields reported"
+    evidence:
+      - "internal/importer (parse/plan/apply/report) + cmd/onegate/import.go: legacy camelCase schema (providers/models/routing/keys + runtime blocks), strategy mapping (cost-preferred->cost etc.), dry-run default, --apply, per-entity diff report"
+      - "internal/importer/importer_test.go: 7 tests — empty-store plan, apply idempotency (2nd plan = all unchanged, re-apply no dupes, credential round-trip), update detection, legacy file byte-identical after import, unmapped/runtime reporting, garbage rejection"
+      - "Live CLI smoke: dry-run -> apply (3 changes) -> re-import (0 changes); checklist E-8/F-5 closed"
 
   - id: p7.data-import
     title: "Import: virtual keys, routing rules, usage history"

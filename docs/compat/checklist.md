@@ -124,7 +124,7 @@ sections.
 | E-5 | Hot reload: SIGHUP + mtime poll, last-good on failure, atomic swap | parity | `internal/config/reload_test.go` |
 | E-6 | Partial files overlay defaults (unmentioned keys untouched) | parity | config mergeFile tests |
 | E-7 | Unknown JSON keys rejected with line/column error | parity | `jsonUnmarshalStrict` (config) — OmniRoute's ajv loader behaved the same |
-| E-8 | `omniroute.json` `providers[]`/`models[]`/`keys[]`/`routing[]` migrate via `onegate import` (dry-run + apply, diff report, idempotent, unmapped fields reported) | gap (blocker) | p7.config-import deliverable; CLI-path evidence |
+| E-8 | `omniroute.json` `providers[]`/`models[]`/`routing[]` migrate via `onegate import` (dry-run + apply, diff report, idempotent, unmapped fields reported); `keys[]` via the data import | parity | `onegate import` (internal/importer + 7 tests): dry-run default, idempotent re-import (0 changes), legacy file untouched, unmapped fields reported; keys tracked by F-5 |
 | E-9 | Legacy `$OMNIROUTE_*` env names read as aliases of `ONEGATE_*` at import time only (not at serve time — documented divergence, migration note) | partial | intentional: serve-time aliasing would mask typos; documented in report-phase7 + upgrade guide |
 
 ## F. CLI
@@ -135,7 +135,7 @@ sections.
 | F-2 | Flags: `-host -port -data-dir -log-level -config` | parity | main.go flagset |
 | F-3 | `-version` prints `onegate <semver> (commit, date)`; `omniroute --version` printed `omniroute/3.8.52 …` — import prints a mapping note instead | parity (divergent string, documented) | `internal/version/version.go` |
 | F-4 | Exit codes: 0 success, 1 usage/runtime error, 2 bad flag | partial | Go flag pkg returns 2 for parse errors, main returns 1 otherwise — matches legacy |
-| F-5 | `onegate import <path> [--dry-run|--apply] [--data-dir …]` migrates a legacy install (new in OneGate; legacy had `omniroute export`) | gap (blocker) | p7.config-import / p7.data-import |
+| F-5 | `onegate import <path> [--apply] [--data-dir …]` migrates a legacy install (new in OneGate; legacy had `omniroute export`) | parity | config import live (E-8 evidence); keys/usage history: p7.data-import in flight |
 | F-6 | SIGINT/SIGTERM graceful shutdown (drain in-flight, close storage) | parity | main.go signal.NotifyContext |
 | F-7 | `-h/--help` usage text lists all flags | parity | flag pkg default |
 
@@ -156,9 +156,9 @@ through the canonical core.
 
 ## Rollup
 
-- 79 rows: 71 parity, 4 partial (all cosmetic, documented), 1 n/a,
-  **2 gap (blocker)** — E-8 and F-5, both owned by `onegate import`
-  (p7.config-import / p7.data-import, in flight).
+- 79 rows: 73 parity, 4 partial (all cosmetic, documented), 1 n/a,
+  **1 gap (blocker)** — F-5's key/usage half, owned by `onegate import-keys`
+  (p7.data-import, in flight).
 - All 16 harness-surfaced blockers closed by p7.parity-fixes; the corpus
   (41 cases) replays clean: `python3 scripts/parity/replay.py` →
   41/41 pass, 0 blocker diffs (docs/reports/parity-replay.md).

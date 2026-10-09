@@ -43,6 +43,13 @@ func main() {
 }
 
 func run() error {
+	// --- subcommands ----------------------------------------------------
+	// `onegate import <path>` migrates a legacy OmniRoute install
+	// (p7.config-import); everything else serves.
+	if len(os.Args) > 1 && os.Args[1] == "import" {
+		return runImport(os.Args[2:])
+	}
+
 	// --- flags (highest precedence) -----------------------------------
 	fs := flag.NewFlagSet("onegate", flag.ContinueOnError)
 	var (
