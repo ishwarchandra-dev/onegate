@@ -234,7 +234,7 @@ func run() error {
 	// Quota enforcement wraps the engine (checklist C-6..C-9): RPM/TPM/
 	// concurrency/spend gates render 429 + Retry-After before any
 	// upstream work; actual usage debits after completion.
-	qp = newQuotaProxy(fallbackEngine, quotaManager)
+	qp = newQuotaProxy(fallbackEngine, quotaManager, metricsRegistry)
 
 	// --- HTTP server (p3.http-server + p3.ingest-endpoints) ------------
 	// The router owns the middleware chain (request-id -> access-log

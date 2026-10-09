@@ -26,12 +26,16 @@ nodes:
   - id: p8.load-burst
     title: "Load test: burst + stream-churn scenarios; graceful degradation behavior"
     owner: performance-engineer
-    status: pending
+    status: done
     depends_on: [p7.gate]
     deliverables:
       - "Burst scenarios + degradation report (queue limits, 503 posture)"
     acceptance:
       - "Degradation is explicit and observable, never silent queuing"
+    evidence:
+      - "scripts/loadtests/burst.py — burst walls (100/300), stream churn (150+50 short-lived streams), slow-provider overload (60x500ms) with live inflight sampling"
+      - "docs/reports/load-burst.md — all scenarios 100% explicit answers, zero errors: burst-300 p99 26ms, churn recovers to inflight 0, slow-overload bounded by provider delay with peak_inflight=60 observed; posture documented (per-key limits + circuits + upstream Retry-After as explicit controls; global cap considered, deferred with rationale)"
+      - "Fix landed: onereq_inflight_requests gauge was dead — wired at quotaProxy ingress (cmd/onegate/adapters.go)"
 
   - id: p8.chaos-catalog
     title: "Chaos catalog run: provider outages, truncation, stalls, disk-full, fd exhaustion"

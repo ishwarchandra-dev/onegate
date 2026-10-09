@@ -157,23 +157,31 @@ func (r *routingResolver) ResolveTargets(ctx context.Context, call ingest.Call) 
 // 429 + Retry-After before any upstream work; actual usage debits after
 // completion. In-flight keys are kept trace-ID-keyed for the debit.
 type quotaProxy struct {
-	engine *fallback.Engine
-	quota  *ratelimit.QuotaManager
+	engine  *fallback.Engine
+	quota   *ratelimit.QuotaManager
+	metrics *observability.Registry // may be nil (tests)
 
 	mu   sync.Mutex
 	keys map[string]domain.VirtualKey
 }
 
-// newQuotaProxy builds the wrapper. Both arguments are required.
-func newQuotaProxy(engine *fallback.Engine, quota *ratelimit.QuotaManager) *quotaProxy {
+// newQuotaProxy builds the wrapper. engine and quota are required;
+// metrics (may be nil) drives the in-flight gauge.
+func newQuotaProxy(engine *fallback.Engine, quota *ratelimit.QuotaManager,
+	metrics *observability.Registry) *quotaProxy {
 	if engine == nil || quota == nil {
 		panic("onegate: quotaProxy requires an engine and a QuotaManager")
 	}
-	return &quotaProxy{engine: engine, quota: quota, keys: map[string]domain.VirtualKey{}}
+	return &quotaProxy{engine: engine, quota: quota, metrics: metrics,
+		keys: map[string]domain.VirtualKey{}}
 }
 
 // Execute implements ingest.Proxy.
 func (p *quotaProxy) Execute(ctx context.Context, w http.ResponseWriter, call ingest.Call) {
+	if p.metrics != nil {
+		p.metrics.IncInflight(string(call.Protocol))
+		defer p.metrics.DecInflight(string(call.Protocol))
+	}
 	release, err := p.quota.Acquire(call.Key, estimateTokens(call.Request))
 	if err != nil {
 		var rlErr *ratelimit.RateLimitError
