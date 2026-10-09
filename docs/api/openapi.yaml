@@ -1,0 +1,2089 @@
+openapi: 3.1.0
+info:
+  title: OneGate Management API
+  version: 1.0.0
+  summary: Control-plane API consumed by the OneGate dashboard.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  description: |
+    The OneGate management API (`/api/*`) is the control plane for the
+    gateway: providers, canonical models and routing, virtual keys, usage
+    analytics, live logs, and system settings. It is consumed by the
+    embedded dashboard (Phase 6) and later by the CLI.
+
+    Design invariants (see `.claude/agents/api-designer.md`):
+
+    - **Consistent casing**: all JSON keys are `snake_case`, matching the
+      canonical domain types in `internal/domain`.
+    - **Error envelope**: every non-2xx response is
+      `{"error": {status, type, code, message, param, retryable}}` — the
+      same `domain.GatewayError` shape the proxy renders to LLM clients.
+    - **Pagination**: cursor-based only, never offset. List endpoints take
+      `limit` + opaque `cursor` and return `{items, next_cursor}` with
+      stable ordering.
+    - **Time**: Unix milliseconds (UTC) everywhere. **Money**: integer
+      micro-USD (1 micro = 1e-6 USD), never floats.
+    - **Secrets never cross the wire**: provider API keys are write-only
+      (`api_key` on create/replace), reads return `masked_key` only.
+      Virtual keys return the raw `ogk-…` value exactly once, at creation.
+    - **Auth classes**: every operation carries `x-auth`
+      (`admin-session` cookie, `admin-token` header, or `public`) and
+      `x-rate-limit` (class name; limits defined under `x-rate-limit-classes`).
+    - **CSRF**: mutating operations (`POST/PUT/PATCH/DELETE`) under
+      `admin-session` require the `X-CSRF-Token` header (double-submit
+      token issued by `GET /api/auth/session`).
+    - **Idempotency**: `PUT` is full-replace and idempotent; `PATCH` is
+      partial-update and idempotent; `POST` creates are idempotent when
+      the client supplies the resource `id` (replays return the existing
+      resource), except key minting which always creates a new key.
+
+    The proxy data plane (`/v1/chat/completions`, `/v1/messages`,
+    `/v1beta/models/{model}:generateContent`) is explicitly out of scope.
+servers:
+  - url: /
+    description: Same-origin (embedded dashboard / reverse proxy).
+  - url: http://127.0.0.1:7420
+    description: Default local listener.
+
+tags:
+  - name: auth
+    description: Dashboard session lifecycle (login, logout, first-run setup).
+  - name: providers
+    description: Upstream provider configuration (credentials masked).
+  - name: models
+    description: Canonical model registry and fallback chains.
+  - name: routing
+    description: Routing rules and target health states.
+  - name: keys
+    description: Virtual key lifecycle (raw key shown exactly once).
+  - name: usage
+    description: Usage analytics over rollups and raw request records.
+  - name: logs
+    description: Live log feed (SSE) and ring-buffer snapshot.
+  - name: system
+    description: Gateway status and effective settings.
+
+x-rate-limit-classes:
+  auth: "Login/setup brute-force guard: 10 req/min per source IP, per route."
+  read: "Reads and queries: 120 req/min per session."
+  write: "Mutations: 30 req/min per session."
+  stream: "SSE streams: max 5 concurrent connections per session."
+  probe: "Outbound test connections: 6 req/min per session."
+
+security:
+  - sessionCookie: []
+  - adminToken: []
+
+paths:
+  # -------------------------------------------------------------------------
+  # Auth / sessions
+  # -------------------------------------------------------------------------
+  /api/auth/setup-status:
+    get:
+      operationId: getSetupStatus
+      summary: Report whether first-run admin setup is required
+      description: |
+        Public endpoint. The dashboard calls this before rendering the
+        login screen: when `setup_required` is true it shows the
+        first-run wizard instead of the login form.
+      tags: [auth]
+      x-auth: public
+      x-rate-limit: auth
+      security: []
+      responses:
+        "200":
+          description: Setup status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [setup_required]
+                properties:
+                  setup_required:
+                    type: boolean
+                    description: True when no admin account exists yet.
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/auth/setup:
+    post:
+      operationId: createAdmin
+      summary: Create the admin account (first run only)
+      description: |
+        Creates the initial admin account. Succeeds only while
+        `setup_required` is true; afterwards it returns 403 and the
+        password is managed exclusively through the CLI.
+      tags: [auth]
+      x-auth: public
+      x-rate-limit: auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  $ref: "#/components/schemas/Username"
+                password:
+                  $ref: "#/components/schemas/Password"
+      responses:
+        "201":
+          description: Admin created; session cookie set (auto-login).
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SessionCookie"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionInfo"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/auth/login:
+    post:
+      operationId: login
+      summary: Log in with username and password
+      description: |
+        Exchanges credentials for a session cookie. Repeated failures are
+        rate-limited by the `auth` class. The response body deliberately
+        mirrors `GET /api/auth/session`.
+      tags: [auth]
+      x-auth: public
+      x-rate-limit: auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  $ref: "#/components/schemas/Username"
+                password:
+                  $ref: "#/components/schemas/Password"
+      responses:
+        "200":
+          description: Authenticated; session cookie set.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SessionCookie"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/auth/logout:
+    post:
+      operationId: logout
+      summary: Terminate the current session
+      description: Deletes the server-side session and expires the cookie.
+      tags: [auth]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      responses:
+        "204":
+          description: Session destroyed; cookie cleared.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/auth/session:
+    get:
+      operationId: getSession
+      summary: Describe the current session
+      description: |
+        Returns the authenticated principal and the CSRF token required
+        by mutating operations. When unauthenticated, responds 401 rather
+        than a partial body so the dashboard can route to login.
+      tags: [auth]
+      x-auth: admin-session
+      x-rate-limit: read
+      responses:
+        "200":
+          description: Current session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  # -------------------------------------------------------------------------
+  # Providers
+  # -------------------------------------------------------------------------
+  /api/providers:
+    get:
+      operationId: listProviders
+      summary: List configured providers
+      tags: [providers]
+      x-auth: admin-session
+      x-rate-limit: read
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Provider page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageMeta"
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Provider"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: createProvider
+      summary: Register a provider
+      description: |
+        Creates a provider. `api_key` is write-only: the stored credential
+        is encrypted at rest (AES-GCM) and never returned; reads expose
+        `masked_key` only. Supplying `id` makes the call idempotent.
+      tags: [providers]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderCreate"
+      responses:
+        "201":
+          description: Provider created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Provider"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/providers/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ProviderId"
+    get:
+      operationId: getProvider
+      summary: Fetch one provider
+      tags: [providers]
+      x-auth: admin-session
+      x-rate-limit: read
+      responses:
+        "200":
+          description: Provider detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Provider"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+    patch:
+      operationId: updateProvider
+      summary: Update provider fields
+      description: |
+        Partial update. Omitting `api_key` keeps the stored credential;
+        sending it replaces the credential (the only rotation path).
+      tags: [providers]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderUpdate"
+      responses:
+        "200":
+          description: Updated provider.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Provider"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      operationId: deleteProvider
+      summary: Remove a provider
+      description: |
+        Deletes the provider. Models referencing it keep their targets;
+        the dashboard surfaces dangling references as validation warnings.
+      tags: [providers]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/providers/{id}/test:
+    parameters:
+      - $ref: "#/components/parameters/ProviderId"
+    post:
+      operationId: testProvider
+      summary: Test the provider connection
+      description: |
+        Performs a minimal live call against the provider (protocol-native
+        auth probe). Returns per-protocol error detail on failure so the
+        dashboard can render exactly what the provider said, mapped onto
+        the canonical error envelope.
+      tags: [providers]
+      x-auth: admin-session
+      x-rate-limit: probe
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      responses:
+        "200":
+          description: Probe result (success or per-protocol failure detail).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderTestResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  # -------------------------------------------------------------------------
+  # Models (canonical registry + fallback chains)
+  # -------------------------------------------------------------------------
+  /api/models:
+    get:
+      operationId: listModels
+      summary: List canonical models with their targets
+      tags: [models]
+      x-auth: admin-session
+      x-rate-limit: read
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Model page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageMeta"
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Model"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: createModel
+      summary: Register a canonical model
+      description: |
+        Creates a model with its fallback chain (`targets`, ordered by
+        `position`). Supplying `id` makes the call idempotent.
+      tags: [models]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelInput"
+      responses:
+        "201":
+          description: Model created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/models/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ModelId"
+    get:
+      operationId: getModel
+      summary: Fetch one canonical model
+      tags: [models]
+      x-auth: admin-session
+      x-rate-limit: read
+      responses:
+        "200":
+          description: Model detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+    put:
+      operationId: replaceModel
+      summary: Replace a model and its fallback chain
+      description: |
+        Full-replace, idempotent. The target list is replaced atomically
+        (position order defines the ordered-policy chain). Validation
+        rejects references to unknown providers.
+      tags: [models]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelInput"
+      responses:
+        "200":
+          description: Replaced model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      operationId: deleteModel
+      summary: Remove a canonical model
+      tags: [models]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  # -------------------------------------------------------------------------
+  # Routing rules + health
+  # -------------------------------------------------------------------------
+  /api/routing-rules:
+    get:
+      operationId: listRoutingRules
+      summary: List routing rules
+      tags: [routing]
+      x-auth: admin-session
+      x-rate-limit: read
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Routing rule page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageMeta"
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/RoutingRule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: createRoutingRule
+      summary: Create a routing rule
+      description: |
+        Binds a fallback policy to a canonical model. Supplying `id`
+        makes the call idempotent.
+      tags: [routing]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutingRuleInput"
+      responses:
+        "201":
+          description: Rule created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutingRule"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/routing-rules/{id}:
+    parameters:
+      - $ref: "#/components/parameters/RoutingRuleId"
+    put:
+      operationId: replaceRoutingRule
+      summary: Replace a routing rule
+      tags: [routing]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutingRuleInput"
+      responses:
+        "200":
+          description: Replaced rule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutingRule"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      operationId: deleteRoutingRule
+      summary: Remove a routing rule
+      tags: [routing]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/routing/health:
+    get:
+      operationId: getRoutingHealth
+      summary: Target circuit states and recent transition events
+      description: |
+        Snapshot of the health tracker driving routing decisions, plus the
+        most recent state transitions. Powers the health badges in the
+        routing view.
+      tags: [routing]
+      x-auth: admin-session
+      x-rate-limit: read
+      parameters:
+        - name: event_limit
+          in: query
+          description: Maximum health events returned (default 50).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Health snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [targets, events]
+                properties:
+                  targets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TargetHealth"
+                  events:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/HealthEvent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  # -------------------------------------------------------------------------
+  # Virtual keys
+  # -------------------------------------------------------------------------
+  /api/keys:
+    get:
+      operationId: listKeys
+      summary: List virtual keys
+      description: |
+        Returns key metadata only. The raw key material is never present
+        (it exists exactly once, in the 201 response of the create call).
+      tags: [keys]
+      x-auth: admin-session
+      x-rate-limit: read
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Key page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageMeta"
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/VirtualKey"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: createKey
+      summary: Mint a virtual key
+      description: |
+        Mints a new `ogk-…` key. The response contains the raw key exactly
+        once — the dashboard shows it with a copy button and a warning,
+        and it is unrecoverable afterwards (only a peppered hash is
+        stored). This call is never idempotent: every call mints a new key.
+      tags: [keys]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  $ref: "#/components/schemas/KeyName"
+                scopes:
+                  $ref: "#/components/schemas/KeyScopes"
+                limits:
+                  $ref: "#/components/schemas/KeyLimits"
+                expires_at_ms:
+                  type: integer
+                  format: int64
+                  description: Expiry as Unix ms (0/omitted = never expires).
+      responses:
+        "201":
+          description: Key minted; raw key present exactly once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key, raw_key]
+                properties:
+                  key:
+                    $ref: "#/components/schemas/VirtualKey"
+                  raw_key:
+                    type: string
+                    description: The full secret. Shown once, never stored in plaintext.
+                    examples:
+                      - ogk-lt4x9a2bmc7e...
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/keys/{id}:
+    parameters:
+      - $ref: "#/components/parameters/KeyId"
+    get:
+      operationId: getKey
+      summary: Fetch one virtual key
+      tags: [keys]
+      x-auth: admin-session
+      x-rate-limit: read
+      responses:
+        "200":
+          description: Key detail (no raw material).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualKey"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+    patch:
+      operationId: updateKey
+      summary: Update key metadata, scopes, or limits
+      description: |
+        Partial update of name, scopes, limits, and expiry. Idempotent.
+        Cannot resurrect a revoked key (use create instead).
+      tags: [keys]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                name:
+                  $ref: "#/components/schemas/KeyName"
+                scopes:
+                  $ref: "#/components/schemas/KeyScopes"
+                limits:
+                  $ref: "#/components/schemas/KeyLimits"
+                expires_at_ms:
+                  type: integer
+                  format: int64
+                  description: New expiry as Unix ms (0 = never).
+      responses:
+        "200":
+          description: Updated key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualKey"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      operationId: deleteKey
+      summary: Permanently delete a virtual key
+      description: |
+        Hard delete of the key row (distinct from revoke: deleted keys
+        lose their usage history linkage). Revocation is the normal path.
+      tags: [keys]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/keys/{id}/revoke:
+    parameters:
+      - $ref: "#/components/parameters/KeyId"
+    post:
+      operationId: revokeKey
+      summary: Revoke a virtual key
+      description: |
+        Marks the key revoked; authentication fails immediately with 403.
+        Idempotent — revoking a revoked key returns it unchanged.
+      tags: [keys]
+      x-auth: admin-session
+      x-rate-limit: write
+      parameters:
+        - $ref: "#/components/parameters/CSRFHeader"
+      responses:
+        "200":
+          description: Revoked key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualKey"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/keys/{id}/usage:
+    parameters:
+      - $ref: "#/components/parameters/KeyId"
+    get:
+      operationId: getKeyUsage
+      summary: Usage totals for one key over a time window
+      description: |
+        Rollup-backed aggregate (requests, tokens, cost) for the key.
+        Powers the per-key usage summary on the keys view.
+      tags: [keys]
+      x-auth: admin-session
+      x-rate-limit: read
+      parameters:
+        - $ref: "#/components/parameters/StartMS"
+        - $ref: "#/components/parameters/EndMS"
+      responses:
+        "200":
+          description: Usage totals.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageTotals"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  # -------------------------------------------------------------------------
+  # Usage analytics
+  # -------------------------------------------------------------------------
+  /api/usage/range:
+    get:
+      operationId: queryUsageRange
+      summary: Time-series usage buckets for a window
+      description: |
+        Rollup-backed series for the analytics charts: one bucket per
+        `step`, each row carrying requests/errors/tokens/cost split by
+        key, model, and provider. Buckets with no traffic are simply
+        absent (the client fills gaps for charting).
+      tags: [usage]
+      x-auth: admin-session
+      x-rate-limit: read
+      parameters:
+        - $ref: "#/components/parameters/StartMS"
+        - $ref: "#/components/parameters/EndMS"
+        - name: step
+          in: query
+          description: Bucket size.
+          schema:
+            type: string
+            enum: [hour, day]
+            default: hour
+        - $ref: "#/components/parameters/FilterVKey"
+        - $ref: "#/components/parameters/FilterModel"
+        - $ref: "#/components/parameters/FilterProvider"
+      responses:
+        "200":
+          description: Bucket series.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [buckets]
+                properties:
+                  buckets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/UsageBucket"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/usage/summary:
+    get:
+      operationId: queryUsageSummary
+      summary: Usage totals for a window
+      description: |
+        Aggregate totals (requests, errors, tokens, cost) across the
+        requested window and filters. Same filters as the range query.
+      tags: [usage]
+      x-auth: admin-session
+      x-rate-limit: read
+      parameters:
+        - $ref: "#/components/parameters/StartMS"
+        - $ref: "#/components/parameters/EndMS"
+        - $ref: "#/components/parameters/FilterVKey"
+        - $ref: "#/components/parameters/FilterModel"
+        - $ref: "#/components/parameters/FilterProvider"
+      responses:
+        "200":
+          description: Totals.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageTotals"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/requests:
+    get:
+      operationId: listRequests
+      summary: Raw request records, newest first
+      description: |
+        Cursor-paginated request log (what the usage pipeline recorded,
+        including cancelled and failed requests). Powers the recent
+        requests table and per-key drill-downs.
+      tags: [usage]
+      x-auth: admin-session
+      x-rate-limit: read
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/FilterVKey"
+      responses:
+        "200":
+          description: Request page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageMeta"
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/RequestRecord"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  # -------------------------------------------------------------------------
+  # Logs
+  # -------------------------------------------------------------------------
+  /api/logs/recent:
+    get:
+      operationId: recentLogs
+      summary: Snapshot of the recent-log ring buffer
+      description: |
+        Returns recent log entries from the in-memory ring buffer, subject
+        to the same filters the SSE feed accepts. Entries are already
+        redacted at the logging layer.
+      tags: [logs]
+      x-auth: admin-session
+      x-rate-limit: read
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum entries returned.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 200
+        - name: min_level
+          in: query
+          description: Minimum log level.
+          schema:
+            type: string
+            enum: [debug, info, warn, error]
+        - name: trace_id
+          in: query
+          description: Exact trace-ID match.
+          schema:
+            type: string
+        - name: provider
+          in: query
+          description: Exact provider match.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Log entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries]
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LogEntry"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/logs/live:
+    get:
+      operationId: streamLiveLogs
+      summary: Live log stream (Server-Sent Events)
+      description: |
+        SSE stream of redacted log entries. Accepts the same filters as
+        the snapshot endpoint via query parameters. Slow subscribers are
+        never back-pressured: dropped events surface as `event: dropped`
+        markers, which the dashboard renders as a gap indicator. Event
+        types: `log` (a LogEntry payload) and `dropped` (count since the
+        last delivered event).
+      tags: [logs]
+      x-auth: admin-session
+      x-rate-limit: stream
+      parameters:
+        - name: min_level
+          in: query
+          description: Minimum log level.
+          schema:
+            type: string
+            enum: [debug, info, warn, error]
+        - name: trace_id
+          in: query
+          description: Exact trace-ID match.
+          schema:
+            type: string
+        - name: provider
+          in: query
+          description: Exact provider match.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: |
+            SSE stream. Frames: `event: log\ndata: {LogEntry JSON}\n\n`
+            and `event: dropped\ndata: {"count": N}\n\n`.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  # -------------------------------------------------------------------------
+  # System
+  # -------------------------------------------------------------------------
+  /api/system/status:
+    get:
+      operationId: getSystemStatus
+      summary: Gateway status card (version, uptime, object counts)
+      description: |
+        Dashboard home data: build identity, uptime, storage size, and
+        counts of the main objects.
+      tags: [system]
+      x-auth: admin-session
+      x-rate-limit: read
+      responses:
+        "200":
+          description: Status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /api/system/config:
+    get:
+      operationId: getEffectiveConfig
+      summary: Read-only effective runtime configuration
+      description: |
+        The settings view. Reflects the resolved configuration (precedence:
+        flags > env > file > defaults) with no secrets — paths are shown,
+        credentials are not.
+      tags: [system]
+      x-auth: admin-session
+      x-rate-limit: read
+      responses:
+        "200":
+          description: Effective configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemConfig"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+# ---------------------------------------------------------------------------
+# Components
+# ---------------------------------------------------------------------------
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: onegate_session
+      description: |
+        Server-side session cookie issued by login/setup. HttpOnly,
+        SameSite=Lax, Secure (when TLS-terminated). Mutating requests
+        additionally require the X-CSRF-Token header.
+    adminToken:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-token
+      description: |
+        The `ONEGATE_ADMIN_TOKEN` bootstrap token. Meant for CLI/ops use;
+        the dashboard uses session cookies. CSRF does not apply to it.
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: Page size (1-200).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque pagination cursor from a previous `next_cursor`.
+      schema:
+        type: string
+    CSRFHeader:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      description: Double-submit CSRF token from GET /api/auth/session.
+      schema:
+        type: string
+        minLength: 16
+    ProviderId:
+      name: id
+      in: path
+      required: true
+      description: Provider ID (`prov_…`).
+      schema:
+        $ref: "#/components/schemas/ID"
+    ModelId:
+      name: id
+      in: path
+      required: true
+      description: Canonical model ID (e.g. `gpt-4o`).
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    RoutingRuleId:
+      name: id
+      in: path
+      required: true
+      description: Routing rule ID (`rule_…`).
+      schema:
+        $ref: "#/components/schemas/ID"
+    KeyId:
+      name: id
+      in: path
+      required: true
+      description: Virtual key ID (`vkey_…`).
+      schema:
+        $ref: "#/components/schemas/ID"
+    StartMS:
+      name: start_ms
+      in: query
+      description: Window start as Unix ms (inclusive).
+      schema:
+        type: integer
+        format: int64
+    EndMS:
+      name: end_ms
+      in: query
+      description: Window end as Unix ms (exclusive).
+      schema:
+        type: integer
+        format: int64
+    FilterVKey:
+      name: vkey_id
+      in: query
+      description: Filter by virtual key ID.
+      schema:
+        $ref: "#/components/schemas/ID"
+    FilterModel:
+      name: model_id
+      in: query
+      description: Filter by canonical model ID.
+      schema:
+        type: string
+    FilterProvider:
+      name: provider_id
+      in: query
+      description: Filter by provider ID.
+      schema:
+        $ref: "#/components/schemas/ID"
+
+  headers:
+    SessionCookie:
+      description: Sets the session cookie (HttpOnly; SameSite=Lax).
+      schema:
+        type: string
+        examples:
+          - onegate_session=s_9f2c...; Path=/; HttpOnly; SameSite=Lax
+
+  responses:
+    InvalidRequest:
+      description: Malformed input (validation failure, bad JSON, bad query).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          examples:
+            badLimit:
+              value:
+                error:
+                  status: 400
+                  type: invalid_request_error
+                  code: invalid_parameter
+                  message: "limit must be between 1 and 200"
+                  param: limit
+                  retryable: false
+    Unauthorized:
+      description: Missing or invalid credentials (or no session).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          examples:
+            noSession:
+              value:
+                error:
+                  status: 401
+                  type: authentication_error
+                  code: unauthenticated
+                  message: "authentication required"
+                  retryable: false
+    Forbidden:
+      description: Authenticated but not allowed (e.g. setup already done).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    NotFound:
+      description: Resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          examples:
+            missing:
+              value:
+                error:
+                  status: 404
+                  type: not_found_error
+                  code: resource_not_found
+                  message: "provider not found"
+                  retryable: false
+    Conflict:
+      description: Resource already exists (id collision on create).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    RateLimited:
+      description: Rate-limit class exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          examples:
+            limited:
+              value:
+                error:
+                  status: 429
+                  type: rate_limit_error
+                  code: rate_limit_exceeded
+                  message: "too many requests"
+                  retryable: true
+    Internal:
+      description: Gateway bug or storage failure.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          examples:
+            boom:
+              value:
+                error:
+                  status: 500
+                  type: internal_error
+                  code: internal
+                  message: "internal error"
+                  retryable: true
+
+  schemas:
+    # -- primitives ---------------------------------------------------------
+    ID:
+      type: string
+      pattern: "^[a-z]+_[0-9]+_[0-9]+$"
+      description: Storage-generated identifier (`prov_…`, `vkey_…`, `rule_…`).
+      examples:
+        - prov_1759270400_123456
+    UnixMS:
+      type: integer
+      format: int64
+      description: Unix milliseconds (UTC).
+    MicroUSD:
+      type: integer
+      format: int64
+      description: Integer micro-USD (1 micro = 1e-6 USD). Never a float.
+    Username:
+      type: string
+      minLength: 3
+      maxLength: 64
+      pattern: "^[a-zA-Z0-9._-]+$"
+      description: Admin username.
+      examples:
+        - admin
+    Password:
+      type: string
+      minLength: 12
+      maxLength: 128
+      description: Admin password (min 12 chars). Write-only, never returned.
+    KeyName:
+      type: string
+      minLength: 1
+      maxLength: 128
+      description: Human-readable virtual key name.
+      examples:
+        - production-app
+
+    # -- pagination ---------------------------------------------------------
+    PageMeta:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          description: Page items (populated by allOf consumers).
+        next_cursor:
+          type: [string, "null"]
+          description: Cursor for the next page; null when exhausted.
+
+    # -- error envelope -----------------------------------------------------
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [status, type, message, retryable]
+          properties:
+            status:
+              type: integer
+              description: HTTP status code.
+            type:
+              type: string
+              enum:
+                - invalid_request_error
+                - authentication_error
+                - permission_error
+                - not_found_error
+                - request_too_large
+                - rate_limit_error
+                - overloaded_error
+                - api_error
+                - timeout_error
+                - cancelled_error
+                - internal_error
+              description: Canonical error taxonomy (domain.ErrorType).
+            code:
+              type: string
+              description: Machine-readable sub-code.
+            message:
+              type: string
+              description: Human-readable detail (safe to display).
+            param:
+              type: string
+              description: Offending field, when applicable.
+            retryable:
+              type: boolean
+              description: Whether a retry could succeed.
+
+    # -- auth ---------------------------------------------------------------
+    SessionInfo:
+      type: object
+      required: [user, csrf_token, expires_at_ms]
+      properties:
+        user:
+          type: object
+          required: [username]
+          properties:
+            username:
+              $ref: "#/components/schemas/Username"
+        csrf_token:
+          type: string
+          description: Double-submit token for mutating calls.
+        expires_at_ms:
+          type: integer
+          format: int64
+          description: Session expiry as Unix ms.
+
+    # -- providers ----------------------------------------------------------
+    Provider:
+      type: object
+      required: [id, name, protocol, base_url, enabled, created_ms, updated_ms]
+      properties:
+        id:
+          $ref: "#/components/schemas/ID"
+        name:
+          type: string
+          description: Display name.
+          examples:
+            - OpenAI
+        protocol:
+          type: string
+          enum: [openai, anthropic, gemini, openai-compat]
+          description: Wire protocol the provider speaks.
+        base_url:
+          type: string
+          description: Provider base URL (SSRF-guarded at call time).
+        masked_key:
+          type: [string, "null"]
+          description: Masked credential for display (`sk-…f3a2`); null when none stored.
+        enabled:
+          type: boolean
+          description: Whether routing may select this provider.
+        created_ms:
+          $ref: "#/components/schemas/UnixMS"
+        updated_ms:
+          $ref: "#/components/schemas/UnixMS"
+    ProviderCreate:
+      type: object
+      required: [name, protocol, base_url]
+      properties:
+        id:
+          $ref: "#/components/schemas/ID"
+        name:
+          type: string
+        protocol:
+          type: string
+          enum: [openai, anthropic, gemini, openai-compat]
+        base_url:
+          type: string
+        api_key:
+          type: [string, "null"]
+          description: Write-only provider credential (encrypted at rest).
+        enabled:
+          type: boolean
+          default: true
+    ProviderUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+        base_url:
+          type: string
+        api_key:
+          type: [string, "null"]
+          description: Send to rotate the credential.
+        enabled:
+          type: boolean
+    ProviderTestResult:
+      type: object
+      required: [ok, latency_ms]
+      properties:
+        ok:
+          type: boolean
+          description: Whether the probe succeeded.
+        latency_ms:
+          type: integer
+          format: int64
+          description: Round-trip probe latency.
+        error:
+          allOf:
+            - $ref: "#/components/schemas/ErrorEnvelope"
+            - description: Present only on failure; carries the per-protocol provider detail.
+
+    # -- models & routing ---------------------------------------------------
+    ModelCapabilities:
+      type: object
+      description: Capability flags used to filter targets per request.
+      properties:
+        tools:
+          type: boolean
+        vision:
+          type: boolean
+        json_mode:
+          type: boolean
+        stream:
+          type: boolean
+    ModelTarget:
+      type: object
+      required: [provider_id, provider_model]
+      properties:
+        provider_id:
+          $ref: "#/components/schemas/ID"
+        provider_model:
+          type: string
+          description: Provider-side model name.
+        weight:
+          type: integer
+          minimum: 1
+          default: 1
+          description: Relative share under the weighted policy.
+        position:
+          type: integer
+          minimum: 0
+          description: Chain order under the ordered policy (lower first).
+        cost_multiplier:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          default: 100
+          description: Percent of nominal cost (100 = nominal).
+        capabilities:
+          allOf:
+            - $ref: "#/components/schemas/ModelCapabilities"
+            - description: Per-target capability overrides.
+    Model:
+      type: object
+      required: [id, targets, capabilities, created_ms, updated_ms]
+      properties:
+        id:
+          type: string
+          description: Canonical model ID.
+          examples:
+            - gpt-4o
+        aliases:
+          type: array
+          items:
+            type: string
+          description: Alternate names clients may request.
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelTarget"
+        capabilities:
+          $ref: "#/components/schemas/ModelCapabilities"
+        created_ms:
+          $ref: "#/components/schemas/UnixMS"
+        updated_ms:
+          $ref: "#/components/schemas/UnixMS"
+    ModelInput:
+      type: object
+      required: [id, targets]
+      properties:
+        id:
+          type: string
+          description: Canonical model ID.
+        aliases:
+          type: array
+          items:
+            type: string
+        targets:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ModelTarget"
+        capabilities:
+          $ref: "#/components/schemas/ModelCapabilities"
+    RoutingRule:
+      type: object
+      required: [id, model_id, policy, enabled, position]
+      properties:
+        id:
+          $ref: "#/components/schemas/ID"
+        model_id:
+          type: string
+          description: Canonical model the rule binds.
+        policy:
+          type: string
+          enum: [ordered, weighted, cost, latency]
+          description: Fallback policy ordering targets.
+        enabled:
+          type: boolean
+        position:
+          type: integer
+          description: Rule order among rules for the same model.
+    RoutingRuleInput:
+      type: object
+      required: [model_id, policy]
+      properties:
+        id:
+          $ref: "#/components/schemas/ID"
+        model_id:
+          type: string
+        policy:
+          type: string
+          enum: [ordered, weighted, cost, latency]
+        enabled:
+          type: boolean
+          default: true
+        position:
+          type: integer
+          default: 0
+    TargetHealth:
+      type: object
+      required: [provider_id, model, state]
+      properties:
+        provider_id:
+          $ref: "#/components/schemas/ID"
+        model:
+          type: string
+          description: Provider-side model name.
+        state:
+          type: string
+          enum: [closed, open, half_open]
+          description: Circuit state (closed = healthy).
+        consecutive_failures:
+          type: integer
+          description: Failures since last success.
+        cooldown_until_ms:
+          type: [integer, "null"]
+          format: int64
+          description: When the open circuit transitions to half-open.
+    HealthEvent:
+      type: object
+      required: [timestamp_ms, provider_id, model, old_state, new_state, reason]
+      properties:
+        timestamp_ms:
+          $ref: "#/components/schemas/UnixMS"
+        provider_id:
+          $ref: "#/components/schemas/ID"
+        model:
+          type: string
+        old_state:
+          type: string
+          enum: [closed, open, half_open]
+        new_state:
+          type: string
+          enum: [closed, open, half_open]
+        reason:
+          type: string
+          description: What triggered the transition.
+        consecutive_failures:
+          type: integer
+
+    # -- virtual keys -------------------------------------------------------
+    KeyScopes:
+      type: object
+      description: Access constraints; empty lists mean allow-all.
+      properties:
+        allowed_models:
+          type: array
+          items:
+            type: string
+        allowed_providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ID"
+        policy_override:
+          type: string
+          enum: [ordered, weighted, cost, latency]
+          description: Fallback policy override for this key.
+        model_overrides:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ordered, weighted, cost, latency]
+          description: Per-model policy overrides.
+    KeyLimits:
+      type: object
+      description: Enforceable quotas; zero means unlimited.
+      properties:
+        rpm:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Requests per minute.
+        tpm:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Tokens per minute.
+        concurrency:
+          type: integer
+          minimum: 0
+          description: Parallel in-flight requests.
+        max_spend_usd_micros:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Lifetime spend cap in micro-USD.
+    VirtualKey:
+      type: object
+      required: [id, name, prefix, scopes, limits, status, created_ms]
+      properties:
+        id:
+          $ref: "#/components/schemas/ID"
+        name:
+          type: string
+        prefix:
+          type: string
+          description: Display prefix of the raw key (`ogk-lt4x…`).
+        scopes:
+          $ref: "#/components/schemas/KeyScopes"
+        limits:
+          $ref: "#/components/schemas/KeyLimits"
+        status:
+          type: string
+          enum: [active, revoked]
+        created_ms:
+          $ref: "#/components/schemas/UnixMS"
+        expires_ms:
+          type: [integer, "null"]
+          format: int64
+          description: Expiry as Unix ms (null = never).
+        last_used_ms:
+          type: [integer, "null"]
+          format: int64
+          description: Last successful authentication.
+
+    # -- usage --------------------------------------------------------------
+    UsageBucket:
+      type: object
+      required: [bucket_start_ms, requests, errors, prompt_tokens, completion_tokens, total_tokens, cost_usd_micros]
+      properties:
+        bucket_start_ms:
+          $ref: "#/components/schemas/UnixMS"
+        virtual_key_id:
+          type: [string, "null"]
+        model_id:
+          type: [string, "null"]
+        provider_id:
+          type: [string, "null"]
+        requests:
+          type: integer
+          format: int64
+        errors:
+          type: integer
+          format: int64
+        prompt_tokens:
+          type: integer
+          format: int64
+        completion_tokens:
+          type: integer
+          format: int64
+        total_tokens:
+          type: integer
+          format: int64
+        cost_usd_micros:
+          $ref: "#/components/schemas/MicroUSD"
+    UsageTotals:
+      type: object
+      required: [requests, errors, prompt_tokens, completion_tokens, total_tokens, cost_usd_micros]
+      properties:
+        requests:
+          type: integer
+          format: int64
+        errors:
+          type: integer
+          format: int64
+        prompt_tokens:
+          type: integer
+          format: int64
+        completion_tokens:
+          type: integer
+          format: int64
+        total_tokens:
+          type: integer
+          format: int64
+        cost_usd_micros:
+          $ref: "#/components/schemas/MicroUSD"
+    RequestRecord:
+      type: object
+      required: [id, trace_id, status, stream, created_ms]
+      properties:
+        id:
+          type: string
+          description: Equals the trace ID.
+        trace_id:
+          type: string
+          description: Correlation ID (`req-…`) spanning logs and metrics.
+        virtual_key_id:
+          type: [string, "null"]
+        model_requested:
+          type: string
+        model_served:
+          type: [string, "null"]
+          description: Canonical model actually served (after fallback).
+        provider_id:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [success, error, cancelled]
+        error_code:
+          type: [string, "null"]
+        stream:
+          type: boolean
+        prompt_tokens:
+          type: integer
+          format: int64
+        completion_tokens:
+          type: integer
+          format: int64
+        total_tokens:
+          type: integer
+          format: int64
+        cost_usd_micros:
+          $ref: "#/components/schemas/MicroUSD"
+        latency_ms:
+          type: integer
+          format: int64
+        ttft_ms:
+          type: [integer, "null"]
+          format: int64
+          description: Time to first token (streaming only).
+        attempts:
+          type: integer
+          description: Provider attempts (fallbacks + 1).
+        created_ms:
+          $ref: "#/components/schemas/UnixMS"
+
+    # -- logs ---------------------------------------------------------------
+    LogEntry:
+      type: object
+      required: [timestamp, level, message]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC 3339 event time.
+        level:
+          type: string
+          enum: [debug, info, warn, error]
+        message:
+          type: string
+        trace_id:
+          type: string
+          description: Correlates with RequestRecord.trace_id.
+        provider:
+          type: string
+        attrs:
+          type: object
+          additionalProperties: true
+          description: Redacted structured attributes.
+
+    # -- system -------------------------------------------------------------
+    SystemStatus:
+      type: object
+      required: [version, schema_version, uptime_ms, counts]
+      properties:
+        version:
+          type: string
+          description: Build version (ldflags-injected).
+        git_commit:
+          type: string
+          description: Build commit.
+        schema_version:
+          type: integer
+          description: Storage schema version.
+        uptime_ms:
+          type: integer
+          format: int64
+        counts:
+          type: object
+          required: [providers, models, keys, requests]
+          properties:
+            providers:
+              type: integer
+            models:
+              type: integer
+            keys:
+              type: integer
+            requests:
+              type: integer
+              format: int64
+              description: Total recorded requests.
+        storage:
+          type: object
+          properties:
+            db_size_bytes:
+              type: integer
+              format: int64
+    SystemConfig:
+      type: object
+      required: [host, port, data_dir, log_level, http, reload]
+      properties:
+        host:
+          type: string
+        port:
+          type: integer
+        data_dir:
+          type: string
+          description: Runtime state directory (DB + master key).
+        log_level:
+          type: string
+          enum: [debug, info, warn, error]
+        http:
+          type: object
+          required: [read_header_timeout_ms, read_timeout_ms, write_timeout_ms, idle_timeout_ms]
+          properties:
+            read_header_timeout_ms:
+              type: integer
+            read_timeout_ms:
+              type: integer
+              description: 0 = disabled (streams never cut).
+            write_timeout_ms:
+              type: integer
+              description: 0 = disabled.
+            idle_timeout_ms:
+              type: integer
+        reload:
+          type: object
+          required: [enabled, poll_ms]
+          properties:
+            enabled:
+              type: boolean
+            poll_ms:
+              type: integer
+              description: Config mtime poll interval.

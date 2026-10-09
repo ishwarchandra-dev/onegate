@@ -13,12 +13,16 @@ nodes:
   - id: p6.api-spec
     title: "OpenAPI spec for management API (resources, pagination, error envelope)"
     owner: api-designer
-    status: pending
+    status: done
     depends_on: [p4.gate, p5.gate]
     deliverables:
       - "docs/api/openapi.yaml covering all dashboard resources"
     acceptance:
       - "Spec lints clean; every endpoint has auth class + rate-limit class"
+    evidence:
+      - "redocly lint docs/api/openapi.yaml — valid (recommended ruleset, 0 problems)"
+      - "python3 scripts/check_openapi.py — 35 operations across 24 paths; all carry x-auth + x-rate-limit; classes auth/read/write/stream/probe defined in x-rate-limit-classes"
+      - "go vet ./... + go test -count=1 ./... green; graph_status.py --check OK (10 graphs, 86 nodes)"
 
   - id: p6.api-impl
     title: "Management API handlers + generated TS client"
