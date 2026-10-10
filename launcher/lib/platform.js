@@ -73,9 +73,13 @@ function resolve() {
 }
 
 // archiveName builds the release archive file name for a version.
+// Windows archives are named after the binary they contain
+// (build.sh: member `onegate_v1.0.0_windows_amd64.exe` zips to
+// `onegate_v1.0.0_windows_amd64.exe.zip`) — caught by the real-release
+// npx smoke on v1.0.0, which looked for a plain `.zip` name.
 function archiveName(version, os, arch) {
-  const ext = os === "windows" ? ".zip" : ".tar.gz"
-  return `onegate_v${version}_${os}_${arch}${ext}`
+  if (os === "windows") return memberName(version, os, arch) + ".zip"
+  return `onegate_v${version}_${os}_${arch}.tar.gz`
 }
 
 // memberName builds the file name inside the archive (the bare binary).

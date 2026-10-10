@@ -41,7 +41,8 @@ test("resolve on this host returns a matrix row consistent with MATRIX", () => {
 test("archiveName and memberName follow the build.sh naming scheme", () => {
   assert.equal(platform.archiveName("1.0.0", "linux", "amd64"), "onegate_v1.0.0_linux_amd64.tar.gz")
   assert.equal(platform.memberName("1.0.0", "linux", "amd64"), "onegate_v1.0.0_linux_amd64")
-  assert.equal(platform.archiveName("1.0.0", "windows", "arm64"), "onegate_v1.0.0_windows_arm64.zip")
+  assert.equal(platform.archiveName("1.0.0", "windows", "arm64"), "onegate_v1.0.0_windows_arm64.exe.zip")
+  assert.equal(platform.archiveName("1.0.0", "windows", "amd64"), "onegate_v1.0.0_windows_amd64.exe.zip")
   assert.equal(platform.memberName("1.0.0", "windows", "arm64"), "onegate_v1.0.0_windows_arm64.exe")
   assert.equal(platform.binaryCacheName("windows", "arm64"), "onegate.exe")
   assert.equal(platform.binaryCacheName("darwin", "amd64"), "onegate")
