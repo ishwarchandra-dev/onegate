@@ -1,0 +1,35 @@
+{
+  "name": "onegate",
+  "version": "1.0.0",
+  "description": "Single-binary LLM gateway (OpenAI / Anthropic / Gemini behind one endpoint). This npm package is a launcher: it downloads the official onegate binary for your platform, verifies it against the release SHA256SUMS, and runs it. No binary is bundled.",
+  "bin": {
+    "onegate": "bin/onegate.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ishwarchandra-dev/onegate.git",
+    "directory": "launcher"
+  },
+  "keywords": [
+    "llm",
+    "gateway",
+    "proxy",
+    "openai",
+    "anthropic",
+    "gemini",
+    "router"
+  ],
+  "license": "MIT",
+  "private": false
+}

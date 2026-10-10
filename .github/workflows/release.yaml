@@ -1,9 +1,11 @@
 name: Release
 
-# Release automation (p9.build-matrix): tag-push v* -> build the 6-target
-# matrix on one linux runner (CGO_ENABLED=0, pure-Go sqlite) -> native
-# runtime smokes on every hosted platform -> GitHub Release with
-# archives + SHA256SUMS + provenance.json.
+# Release automation (p9.build-matrix + p9.npx-launcher): tag-push v* ->
+# build the 6-target matrix on one linux runner (CGO_ENABLED=0, pure-Go
+# sqlite) -> native runtime smokes on every hosted platform -> GitHub
+# Release with archives + SHA256SUMS + provenance.json -> npx launcher
+# smoke against the real published release -> npm publish (guarded on
+# NPM_TOKEN).
 #
 # Action pinning note (devops charter): pin-by-SHA is the target
 # posture; the SHAs must be verified against the actions' published
@@ -117,3 +119,99 @@ jobs:
             dist/*.zip
             dist/SHA256SUMS
             dist/provenance.json
+
+  npx-smoke:
+    # p9.npx-launcher acceptance on the REAL published release: the
+    # launcher tarball installs, downloads this tag's archive from the
+    # GitHub Release, verifies it against SHA256SUMS, and runs it.
+    # windows/arm64 has no hosted runner (same caveat as smoke-native).
+    name: npx smoke (${{ matrix.label }})
+    needs: github-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: linux-amd64, runner: ubuntu-latest }
+          - { label: linux-arm64, runner: ubuntu-24.04-arm }
+          - { label: darwin-amd64, runner: macos-13 }
+          - { label: darwin-arm64, runner: macos-latest }
+          - { label: windows-amd64, runner: windows-latest }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install launcher from npm pack, run against the real release
+        shell: bash
+        env:
+          # default root points at the real GitHub Release; the cache is
+          # isolated per job
+          ONEGATE_LAUNCHER_CACHE: ${{ runner.temp }}/og-launcher-cache
+        run: |
+          set -euo pipefail
+          cd launcher
+          npm pack --silent
+          mkdir -p ../smoke && cd ../smoke
+          npm init -y >/dev/null 2>&1
+          npm install --no-audit --no-fund ../launcher/onegate-*.tgz >/dev/null
+          # 1. version: the launcher must fetch and run this exact tag
+          out="$(npx --no-install onegate --version)"
+          echo "version: $out"
+          case "$out" in
+            "${GITHUB_REF_NAME} "*) : ;;
+            *) echo "npx onegate --version did not report ${GITHUB_REF_NAME}: $out" >&2; exit 1 ;;
+          esac
+          # 2. runtime: start via the launcher, /healthz ok, dashboard serves
+          dir="$(mktemp -d)"
+          npx --no-install onegate -data-dir "$dir" -port 17845 -log-level warn &
+          pid=$!
+          ok=0
+          for _ in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:17845/healthz 2>/dev/null | grep -q '"status":"ok"' \
+              && curl -fsS http://127.0.0.1:17845/ 2>/dev/null | grep -q '__reactRouterContext'; then
+              ok=1; break
+            fi
+            sleep 0.2
+          done
+          kill "$pid" 2>/dev/null || true # best-effort; the runner reaps the tree
+          rm -rf "$dir"
+          if [[ "$ok" != "1" ]]; then
+            echo "npx runtime smoke FAILED on ${{ matrix.label }}" >&2
+            exit 1
+          fi
+          echo "npx smoke PASS on ${{ matrix.label }}"
+
+  npm-publish:
+    # p9.npx-launcher "published": publishes launcher/ to npm. This step
+    # requires an NPM_TOKEN secret configured by the repo owner — when
+    # absent the job reports a notice and exits 0 (the package itself is
+    # fully built and smoke-tested either way).
+    name: Publish to npm
+    needs: [github-release, npx-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish (requires NPM_TOKEN)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+            echo "::notice::NPM_TOKEN is not configured — skipping npm publish."
+            echo "Publish manually with: cd launcher && npm publish --access public"
+            exit 0
+          fi
+          cd launcher
+          npm publish --access public --provenance

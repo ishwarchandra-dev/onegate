@@ -131,6 +131,7 @@ Request flow (canonical → provider → canonical):
 | `internal/config/` | JSON config load/merge/validate + hot-reload watcher |
 | `internal/mockprovider/` | In-process mock provider used by e2e/integration tests |
 | `web/` | Dashboard: React Router 7 + React 19 + Tailwind v4 + shadcn/ui, bun-managed |
+| `launcher/` | npm launcher package (`npx onegate`): downloads + SHA256-verifies + runs the release binary; zero deps, node:test suite |
 | `tasks/` | `phase-N.<name>.graph.yaml` task-graph DAGs (phases 0–9) |
 | `scripts/` | `graph_status.py` — board printer + `--check` validator (runs in CI) |
 | `docs/` | `architecture.md`, `graph-engineering.md`, `protocol-mappings.md`, `research/provider-quirks.md`, `adr/`, `gates/`, `reports/` |
@@ -171,7 +172,12 @@ pinned in go.mod), **fuzz** (15 targets × 10s smoke bursts), **web**
 the **embedded** single-binary artifact: UI + API + proxy on one port,
 plus the placeholder-refusal gate `ONEGATE_REQUIRE_EMBED=1`). Keep all
 six green. `-race` and `make lint` are local gates (AGENTS.md,
-phase-gate docs), not CI jobs.
+phase-gate docs), not CI jobs. Two more pipelines run alongside:
+`launcher.yaml` (push/PR: `launcher/` npm package tests across the
+hosted matrix platforms + `npm pack` hygiene, p9.npx-launcher) and, on
+tag `v*`, `release.yaml` (build matrix → native smokes → GitHub Release
+→ real-release npx smoke → guarded npm publish) plus `docker.yaml`
+(GHCR images).
 
 ## Code Conventions & Common Patterns
 

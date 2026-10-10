@@ -13,7 +13,7 @@ LDFLAGS := -X $(PKG)/internal/version.Version=$(VERSION) \
            -X $(PKG)/internal/version.GitCommit=$(COMMIT) \
            -X $(PKG)/internal/version.BuildDate=$(DATE)
 
-.PHONY: build build-all run test vet fmt lint graph web-install web-dev web web-typecheck api-gen api-check clean
+.PHONY: build build-all run test vet fmt lint graph web-install web-dev web web-typecheck api-gen api-check launcher-test clean
 
 ## build: compile the onegate binary into bin/
 build:
@@ -79,6 +79,10 @@ api-gen:
 api-check:
 	python3 scripts/gen_api_routes.py --check
 	python3 scripts/gen_api_client.py --check
+
+## launcher-test: run the npx launcher package test suite (node:test)
+launcher-test:
+	cd launcher && npm test
 
 ## clean: remove build artifacts
 clean:

@@ -1,0 +1,71 @@
+name: Launcher
+
+# npx launcher CI (p9.npx-launcher): the launcher/ npm package is tested
+# on every push/PR across the hosted platforms of the release matrix.
+# The suite is self-contained (loopback fixture release server, real
+# archives + SHA256SUMS) — no network access required.
+#
+# Real-release smoke (npx onegate against the published GitHub Release)
+# and npm publishing live in release.yaml, after the artifacts exist.
+#
+# Action pinning note (devops charter): pin-by-SHA is the target posture
+# pending maintainer verification; this workflow follows the repo's
+# existing @v4 convention (same as ci.yaml / release.yaml).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Launcher tests (${{ matrix.os }}, node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+        node: [20, 22, 24]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Syntax check (no deps)
+        working-directory: launcher
+        run: node --check bin/onegate.js && node --check lib/platform.js && node --check lib/checksums.js && node --check lib/http.js && node --check lib/install.js && node --check lib/main.js
+
+      - name: Run launcher test suite
+        working-directory: launcher
+        run: npm test
+
+  pack:
+    name: npm pack is clean and lean
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Pack + assert no runtime deps, no tests in tarball
+        working-directory: launcher
+        run: |
+          set -euo pipefail
+          npm pack --silent
+          # files in the tarball (must be bin/lib/README/package.json only)
+          tar -tzf onegate-*.tgz | sort > /tmp/packed.txt
+          cat /tmp/packed.txt
+          grep -q "package/lib/main.js" /tmp/packed.txt
+          ! grep -q "test/" /tmp/packed.txt || { echo "tests leaked into the tarball"; exit 1; }
+          # zero runtime dependencies
+          node -e "const p=require('./package.json'); if (p.dependencies || p.devDependencies) { console.error('launcher must have no dependencies'); process.exit(1) }"
+          # version must be a plain semver (npm rejects 'v' prefixes)
+          node -e "const p=require('./package.json'); if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(p.version)) { console.error('bad version', p.version); process.exit(1) }"
+          echo "pack OK"

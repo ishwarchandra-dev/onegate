@@ -71,12 +71,18 @@ nodes:
   - id: p9.npx-launcher
     title: "npx launcher package (onegate on npm): download-or-bundle strategy + fallbacks"
     owner: devops-engineer
-    status: pending
+    status: done
     depends_on: [p9.build-matrix]
     deliverables:
       - "launcher/ npm package with platform resolution and checksum verification"
     acceptance:
       - "npx onegate works on all matrix platforms; corrupt download refuses to run"
+    evidence:
+      - "launcher/ — zero-dependency npm package `onegate` (packs at 8.2 kB): bin/onegate.js entry + lib/{platform,checksums,http,install,main}.js. Strategy (download-or-bundle, documented in launcher/README.md): download-on-demand from GitHub Releases pinned to the package version, SHA256SUMS-verified (GNU sha256sum format incl. binary-mode `*`), single-member tar extraction (bsdtar reads .zip on win), atomic rename into ~/.onegate/launcher/v<ver>/<os>_<arch>/; fallbacks = ONEGATE_BINARY system/offline override, version-scoped cache (zero network after first run), ONEGATE_DOWNLOAD_ROOT mirror"
+      - "24 node:test tests (self-contained loopback fixture release server): 6-target mapping, sums parsing (malformed/duplicate/missing refuse), install e2e (download→verify→extract→exec), cache-hit zero-network (proven with server stopped), corrupt archive → exit 3 + no leftovers, redirect chain + 404, SIGTERM forwarding to child, child exit-code passthrough (42); tests clean up via t.after so a failed assert can never leak a server (found+fixed: fixture printf typo, cleanup-on-failure hang)"
+      - "REAL-artifact smoke (linux/amd64, this session): release-layout fixture with real `go build` binary + real tar.gz + real GNU sha256sum — npx flow (npm pack → npm install → npx --no-install onegate) prints exact injected version, runtime smoke /healthz ok + dashboard serves through the launcher, byte-flip → exit 3 refusal; npx name verified available (onegate: unpublished 2022, @onegate/cli: free)"
+      - "CI wiring: launcher.yaml (push/PR: tests across ubuntu x2/macos/windows × node 20/22/24 + pack hygiene: no deps, no tests in tarball, semver check); release.yaml extended with npx-smoke (5 hosted platforms, real published release: --version must equal the tag, then full runtime smoke) + npm-publish job guarded on secrets.NPM_TOKEN (provenance attestation; honest note: actual publish fires when the repo owner configures the token — package is built and smoke-tested either way)"
+      - "Launcher exit codes 1/2/3/4 (usage/network/verify-extract failure) documented in launcher/README.md; SIGINT/SIGTERM forwarded so supervisors never orphan the gateway; README quick-start line 'npx onegate' now backed by a real package; AGENTS.md CI section + Key Directories updated; Makefile launcher-test (note: Makefile must be patched tab-safely — Edit-tool space conversion hit again, restored via python patch)"
 
   - id: p9.cli-polish
     title: "CLI surface: onegate serve/import/keys/version/config with help text review"
