@@ -112,7 +112,7 @@ jobs:
         working-directory: web
         run: bun run build
 
-      - name: Build gateway (single binary: UI + API + proxy)
+      - name: "Build gateway (single binary: UI + API + proxy)"
         run: make build
 
       - name: Refuse placeholder dashboard (p9.embed-pipeline gate)

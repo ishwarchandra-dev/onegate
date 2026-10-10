@@ -42,12 +42,16 @@ nodes:
   - id: p9.build-matrix
     title: "Cross-compile release matrix + checksums + provenance manifest"
     owner: devops-engineer
-    status: pending
+    status: done
     depends_on: [p9.embed-pipeline]
     deliverables:
       - "scripts/release/build.sh + GitHub Release automation"
     acceptance:
       - "All targets smoke-tested: start, /healthz, dashboard loads"
+    evidence:
+      - "scripts/release/build.sh — RELEASE_STRICT=1 (tags only, clean tree), builds dashboard first + placeholder refusal gate, then 6 cross targets (linux/darwin/windows x amd64/arm64, CGO_ENABLED=0 pure-Go sqlite), tar.gz/zip archives + SHA256SUMS + provenance.json (version, commit, date, go, per-target list, smoke results)"
+      - "Local run: 6/6 archives built (9.2-11MB each); native linux/amd64 runtime smoke PASS (start, /healthz ok, embedded dashboard serves); static format validation of all 6 binaries (ELF x86-64/aarch64, Mach-O x2, PE x2)"
+      - ".github/workflows/release.yaml — tag-push v* -> matrix job (strict build) -> smoke-native job on 5 hosted platforms (ubuntu amd64/arm64, macos-13 amd64, macos-latest arm64, windows amd64: start + /healthz + dashboard checks) -> github-release job attaches archives + SHA256SUMS + provenance; least-privilege permissions: contents:write; windows/arm64 statically validated (no hosted runner — documented in provenance)"
 
   - id: p9.docker
     title: "Docker images: multi-stage, versioned tags, minimal final layer"

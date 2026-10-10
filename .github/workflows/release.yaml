@@ -1,0 +1,119 @@
+name: Release
+
+# Release automation (p9.build-matrix): tag-push v* -> build the 6-target
+# matrix on one linux runner (CGO_ENABLED=0, pure-Go sqlite) -> native
+# runtime smokes on every hosted platform -> GitHub Release with
+# archives + SHA256SUMS + provenance.json.
+#
+# Action pinning note (devops charter): pin-by-SHA is the target
+# posture; the SHAs must be verified against the actions' published
+# releases by a maintainer before first use — they are not invented
+# here. Until then this workflow follows the repo's existing @v4/@v5
+# convention (same as ci.yaml).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the GitHub Release and upload assets
+
+jobs:
+  matrix:
+    name: Build release matrix (${{ github.ref_name }})
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build all six targets + checksums + provenance
+        run: RELEASE_STRICT=1 scripts/release/build.sh "${GITHUB_REF_NAME}"
+        env:
+          RELEASE_STRICT: "1"
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dist
+          path: dist/
+          if-no-files-found: error
+
+  smoke-native:
+    name: Native smoke (${{ matrix.label }})
+    needs: matrix
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: linux-amd64, runner: ubuntu-latest, archive: "linux_amd64.tar.gz", bin: "linux_amd64" }
+          - { label: linux-arm64, runner: ubuntu-24.04-arm, archive: "linux_arm64.tar.gz", bin: "linux_arm64" }
+          - { label: darwin-amd64, runner: macos-13, archive: "darwin_amd64.tar.gz", bin: "darwin_amd64" }
+          - { label: darwin-arm64, runner: macos-latest, archive: "darwin_arm64.tar.gz", bin: "darwin_arm64" }
+          - { label: windows-amd64, runner: windows-latest, archive: "windows_amd64.exe.zip", bin: "windows_amd64.exe" }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist/
+
+      - name: Extract + runtime smoke (start, /healthz, dashboard)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Locate this platform's archive regardless of version string.
+          archive="$(ls dist/onegate_*_${{ matrix.archive }} | head -1)"
+          if [[ "$archive" == *.zip ]]; then
+            unzip -q "$archive" -d smoke
+          else
+            mkdir -p smoke && tar -xzf "$archive" -C smoke
+          fi
+          bin="$(ls smoke/onegate_* | head -1)"
+          chmod +x "$bin"
+          dir="$(mktemp -d)"
+          "$bin" -data-dir "$dir" -port 17841 -log-level warn &
+          pid=$!
+          ok=0
+          for _ in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:17841/healthz 2>/dev/null | grep -q '"status":"ok"' \
+              && curl -fsS http://127.0.0.1:17841/ 2>/dev/null | grep -q '__reactRouterContext'; then
+              ok=1
+              break
+            fi
+            sleep 0.2
+          done
+          kill "$pid" 2>/dev/null || true
+          if [[ "$ok" != "1" ]]; then
+            echo "native smoke FAILED on ${{ matrix.label }}" >&2
+            exit 1
+          fi
+          echo "native smoke PASS on ${{ matrix.label }}"
+          # windows/arm64 has no hosted runner; it is statically
+          # validated in the matrix job and noted in provenance.json.
+
+  github-release:
+    name: Publish GitHub Release
+    needs: [matrix, smoke-native]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist/
+
+      - name: Create release with artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS
+            dist/provenance.json
