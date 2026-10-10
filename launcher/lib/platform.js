@@ -96,9 +96,17 @@ function binaryCacheName(os, arch) {
 
 // extractArchive extracts a single named member from archive into dir.
 // Uses the system tar (see module comment); never a shell.
+//
+// Runs with cwd=dir and RELATIVE names: an absolute windows path
+// (`D:\a\...`) makes bsdtar parse `D:` as a remote host ("Cannot
+// connect to D") — found by the windows npx smoke on v1.0.0. Relative
+// names carry no colon, so both GNU tar and bsdtar behave identically
+// on every platform.
 function extractArchive(archive, member, dir) {
+  const relArchive = archive.split(/[\\/]/).pop()
+  const relMember = member.split(/[\\/]/).pop()
   return new Promise((resolvePromise, reject) => {
-    execFile("tar", ["-xf", archive, "-C", dir, member], (err) => {
+    execFile("tar", ["-xf", relArchive, "-C", ".", relMember], { cwd: dir }, (err) => {
       if (err) {
         const e = new Error(`tar -xf failed: ${err.message}`)
         e.name = "ExtractError"
