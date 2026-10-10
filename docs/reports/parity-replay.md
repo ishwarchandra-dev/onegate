@@ -1,19 +1,19 @@
 # Parity Replay Report
 
-Generated 2026-10-10 12:56:04 by `scripts/parity/replay.py` (p7.replay-harness).
+Generated 2026-10-10 13:51:04 by `scripts/parity/replay.py` (p7.replay-harness).
 
 - Cases: **41/41 passing**
 - Blocker diffs: **0**
 - Cosmetic diffs: 0
-- Elapsed: 4.1s
+- Elapsed: 4.2s
 
 ## Environment
 
 ```
-provider prov-openai-a -> http://127.0.0.1:37919
-provider prov-openai-b -> http://127.0.0.1:38251
-provider prov-anthropic -> http://127.0.0.1:37919
-provider prov-gemini -> http://127.0.0.1:37919
+provider prov-openai-a -> http://127.0.0.1:47999
+provider prov-openai-b -> http://127.0.0.1:47757
+provider prov-anthropic -> http://127.0.0.1:47999
+provider prov-gemini -> http://127.0.0.1:47999
 model gpt-4o (2 targets, ordered)
 model openai-echo (1 targets, ordered)
 model claude-sonnet (1 targets, ordered)
@@ -33,16 +33,16 @@ model ping-model (1 targets, ordered)
 model weighted-model (2 targets, weighted)
 model stall-model (1 targets, ordered)
 model circuit-model (1 targets, ordered)
-key primary -> vkey_1791636960507_734317
-key scoped-model -> vkey_1791636960508_113698
-key scoped-provider -> vkey_1791636960508_402841
-key revoked -> vkey_1791636960508_662033
-key expired -> vkey_1791636960509_320800
-key rpm2 -> vkey_1791636960509_673992
-key tpm10 -> vkey_1791636960509_976748
-key spend100 -> vkey_1791636960510_261006
-key conc1 -> vkey_1791636960510_635970
-key override-ordered -> vkey_1791636960511_015685
+key primary -> vkey_1791640260507_185086
+key scoped-model -> vkey_1791640260507_571295
+key scoped-provider -> vkey_1791640260508_023056
+key revoked -> vkey_1791640260508_335620
+key expired -> vkey_1791640260509_071374
+key rpm2 -> vkey_1791640260509_370698
+key tpm10 -> vkey_1791640260509_674595
+key spend100 -> vkey_1791640260509_980969
+key conc1 -> vkey_1791640260510_244108
+key override-ordered -> vkey_1791640260510_490292
 ```
 
 ## Matrix

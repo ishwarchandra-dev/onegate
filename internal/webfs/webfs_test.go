@@ -150,12 +150,17 @@ func TestPathTraversalRejected(t *testing.T) {
 	}
 }
 
-func TestMethodNotAllowed(t *testing.T) {
+func TestNonGetIsNotFound(t *testing.T) {
+	// Parity A-12/CC-14: the dashboard is the method-less "/" catch-all,
+	// so non-GET that falls through to it is an unmatched request and
+	// must answer 404 (mux-style), never 405.
 	h := New(testDist(realIndex))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest("POST", "/providers", nil))
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("POST status %d, want 405", rec.Code)
+	for _, method := range []string{"POST", "PUT", "DELETE", "OPTIONS", "PATCH"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(method, "/providers", nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s /providers status %d, want 404", method, rec.Code)
+		}
 	}
 }
 

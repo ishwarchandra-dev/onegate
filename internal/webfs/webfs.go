@@ -9,9 +9,17 @@
 //   - other exact files (favicon.ico, …) → served as-is
 //   - anything else → index.html (the SPA router owns every dashboard
 //     path) with Cache-Control: no-cache so deploys are picked up
-//   - the mux registers this handler under "/" LAST: /healthz, /metrics,
-//     /api/*, /v1/* and the gemini paths are more specific patterns and
-//     win per net/http.ServeMux precedence — one port serves everything.
+//   - the mux registers this handler under "/" (all methods) LAST:
+//     /healthz, /metrics, /api/*, /v1/* and the gemini paths are more
+//     specific patterns and win per net/http.ServeMux precedence — one
+//     port serves everything.
+//
+// Non-GET/HEAD requests that fall through to the dashboard answer 404
+// (mux-style "page not found"), never 405: a method-less catch-all at
+// "/" would otherwise turn every would-be-404 (parity A-12, corpus
+// CC-14: POST /v1/messages/ must 404, not silently match anything) into
+// a 405 from the mux. 405s still happen where they should — on real
+// endpoints registered with method-specific patterns (parity A-11).
 package webfs
 
 import (
@@ -61,8 +69,11 @@ func (h *Handler) IsPlaceholder() bool { return h.placeholder }
 // ServeHTTP implements http.Handler.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, "dashboard is read-only", http.StatusMethodNotAllowed)
+		// 404, not 405: this handler is the method-less "/" catch-all,
+		// so anything reaching it is by definition unmatched. Answering
+		// 405 here would rewrite every would-be-404 (parity A-12/CC-14:
+		// POST /v1/messages/ must be a plain 404) into a method error.
+		http.NotFound(w, r)
 		return
 	}
 
