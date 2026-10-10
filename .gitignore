@@ -1,5 +1,7 @@
 # Go
-bin/
+# root build output only — anchored (/bin/) so launcher/bin/ (the npm
+# launcher entry, p9.npx-launcher) stays tracked
+/bin/
 dist/
 *.exe
 *.test
