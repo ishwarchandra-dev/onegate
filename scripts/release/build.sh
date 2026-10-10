@@ -87,7 +87,7 @@ for t in "${TARGETS[@]}"; do
 done
 
 echo "== checksums =="
-( cd "$OUT" && sha256sum ./*.tar.gz ./*.zip > SHA256SUMS )
+( cd "$OUT" && sha256sum *.tar.gz *.zip > SHA256SUMS )   # bare names: no ./ prefix in the manifest
 
 # ---------------------------------------------------------------------------
 # Smoke test: runtime on the native target, static on cross targets.

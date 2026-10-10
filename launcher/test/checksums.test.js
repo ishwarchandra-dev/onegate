@@ -21,6 +21,17 @@ test("parseSums reads GNU sha256sum text format", () => {
   assert.equal(sums.get("onegate_v1.0.0_linux_amd64.tar.gz"), "b6c7a2f7e1d94a038d3c5e87f2a1b9c4d8e6f7a0123456789abcdef012345678")
 })
 
+test("parseSums normalizes a leading ./ (published-manifest form)", () => {
+  const text =
+    "b".repeat(64) + "  ./onegate_v1.0.0_linux_amd64.tar.gz\n" +
+    "c".repeat(64) + "  onegate_v1.0.0_windows_arm64.exe.zip\n"
+  const sums = checksums.parseSums(text)
+  assert.equal(sums.size, 2)
+  assert.ok(sums.has("onegate_v1.0.0_linux_amd64.tar.gz"), "./-prefixed key must normalize")
+  assert.ok(sums.has("onegate_v1.0.0_windows_arm64.exe.zip"))
+  assert.ok(!sums.has("./onegate_v1.0.0_linux_amd64.tar.gz"), "raw ./ key must not linger")
+})
+
 test("parseSums accepts binary-mode `*` separator and CRLF", () => {
   const text = "a".repeat(64) + " *onegate_v1.0.0_darwin_arm64.tar.gz\r\n"
   const sums = checksums.parseSums(text)

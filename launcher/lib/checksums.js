@@ -39,7 +39,11 @@ function parseSums(text) {
       throw new VerifyError(`SHA256SUMS: malformed line: ${JSON.stringify(raw.slice(0, 80))}`)
     }
     const hex = m[1].toLowerCase()
-    const name = m[2].trim()
+    // normalize a leading "./" (GNU sha256sum writes the path form it
+    // was given; build.sh globs as ./*.tar.gz, so the published manifest
+    // carries ./-prefixed names — caught by the real-release npx smoke
+    // on v1.0.0, which refused a valid manifest)
+    const name = m[2].trim().replace(/^\.\//, "")
     if (name === "" || name.includes("\0")) {
       throw new VerifyError("SHA256SUMS: empty or unsafe file name")
     }
