@@ -66,12 +66,17 @@ nodes:
   - id: p8.security-review
     title: "Security review: threat model refresh, auth audit, SSRF re-check, dependency CVEs"
     owner: security-engineer
-    status: pending
+    status: done
     depends_on: [p7.gate]
     deliverables:
       - "docs/security/threat-model.md v2 + findings register"
     acceptance:
       - "All high findings fixed; govulncheck clean in CI"
+    evidence:
+      - "docs/security/threat-model.md v2 — 12 threat rows (T1-T12), 6 trust boundaries (B1-B6 incl. new importer boundary B5), audit trail with file:line refs"
+      - "Findings register: S-1 HIGH stdlib toolchain vulns (37 reachable) FIXED via toolchain go1.26.9 pinned in go.mod; S-2 x/sys GO-2026-5024 FIXED (v0.22.0->v0.44.0); S-3 importer missing provider validation FIXED (validateProvider + skip actions + client.BlockedIPReason export, 3 tests); S-4 govulncheck CI job added; S-5/S-6/S-7 tracked limitations documented"
+      - "govulncheck: 0 vulnerabilities (symbol+module level) locally and CI-enforced via new vuln job; go vet + full -race suite green on go1.26.9"
+      - "Auth audit re-verified: constant-time compares (token/CSRF/metrics), session cookie flags, 1MiB body caps, log redaction, no URL/query logging, probe rides SSRF-guarded transport, redirects re-dial through guard"
 
   - id: p8.fuzzing
     title: "Fuzzing: protocol parsers + SSE framing + config parsing"
