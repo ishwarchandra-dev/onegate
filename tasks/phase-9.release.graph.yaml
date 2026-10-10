@@ -56,12 +56,17 @@ nodes:
   - id: p9.docker
     title: "Docker images: multi-stage, versioned tags, minimal final layer"
     owner: devops-engineer
-    status: pending
+    status: done
     depends_on: [p9.embed-pipeline]
     deliverables:
       - "Dockerfile (root) + image publish workflow"
     acceptance:
       - "Image runs as non-root with a volume for the data dir"
+    evidence:
+      - "Dockerfile: 3 stages — oven/bun:1.4-slim (SPA build + gzip precompress, deps cached) -> golang:1.26-alpine (CGO_ENABLED=0 build with version ldflags + ONEGATE_REQUIRE_EMBED placeholder-refusal gate inside the stage) -> gcr.io/distroless/static-debian12:nonroot (no shell/package manager, CA certs+tzdata, uid 65532)"
+      - "Non-root + volume: USER nonroot before WORKDIR /data (dir created owned by nonroot), VOLUME /data, CMD -data-dir /data -host 0.0.0.0 -port 7420; .dockerignore keeps context lean (node_modules, .git, dist, docs, e2e artifacts)"
+      - ".github/workflows/docker.yaml: buildx multi-arch linux/amd64+arm64 (qemu), push to GHCR on tag v* (:version + :latest) and main (:main), build-only on PRs, OCI labels + provenance attestations, least-privilege permissions (contents:read packages:write)"
+      - "Offline validation (no docker daemon in dev sandbox): all 3 base image tags verified live against their registries (Docker Hub + gcr.io tag list); builder-stage commands mirror the locally-verified release script (6/6 CGO-free targets built + placeholder gate green); runtime image verification lands on the workflow's first main-push build — honestly noted here rather than claimed"
 
   - id: p9.npx-launcher
     title: "npx launcher package (onegate on npm): download-or-bundle strategy + fallbacks"

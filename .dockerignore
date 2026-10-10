@@ -1,0 +1,20 @@
+# Build context hygiene (p9.docker): keep the image build cache small
+# and deterministic.
+.git
+.github
+bin
+dist
+docs
+tasks
+scripts
+web/node_modules
+web/e2e
+web/.react-router
+web/test-results
+web/playwright-report
+web/.auth
+**/*.db
+**/*.db-shm
+**/*.db-wal
+.onegate
+*.md
