@@ -13,12 +13,16 @@ nodes:
   - id: p9.embed-decision
     title: "ADR: SSR-serve vs SPA mode for embedded dashboard (bundle size, no-node constraint)"
     owner: architect
-    status: pending
+    status: done
     depends_on: [p8.gate]
     deliverables:
       - "docs/adr/ embedding decision with bundle-size evidence"
     acceptance:
       - "Decision accounts for go:embed constraints and offline single-binary story"
+    evidence:
+      - "docs/adr/006-embedded-dashboard-spa.md — SPA mode (ssr:false) chosen over embedded-Node SSR and exotic JS-in-Go; route audit: zero loaders/actions across 8 routes, all data via /api client fetches; serving design (go:embed, catch-all fallback, immutable asset cache, build-time gzip)"
+      - "Bundle evidence measured: 884KB embedded total (572KB JS -> 175KB gz across 22 code-split chunks, 60KB CSS ~11KB gz, 224KB self-hosted Inter woff2 subsets); <1MB binary impact"
+      - "react-router.config.ts switched to ssr:false with rationale comment; HydrateFallback skeleton added to root.tsx (replaces dev console fallback); web build + typecheck green in SPA mode"
 
   - id: p9.embed-pipeline
     title: "Embed pipeline: web build → go:embed → single binary serving UI"

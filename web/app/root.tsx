@@ -32,6 +32,21 @@ export default function App() {
   return <Outlet />
 }
 
+// SPA mode boots the app from a static index.html; until the JS modules
+// load and the router mounts, this is what the user sees (p9.embed-decision:
+// replaces the framework's dev-console fallback with the design-system
+// skeleton shimmer).
+export function HydrateFallback() {
+  return (
+    <div className="flex min-h-svh items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
+        <div className="h-3 w-32 animate-pulse rounded bg-muted" />
+      </div>
+    </div>
+  )
+}
+
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   let message = "Oops!"
   let details = "An unexpected error occurred."
