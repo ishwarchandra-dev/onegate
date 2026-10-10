@@ -104,12 +104,18 @@ nodes:
   - id: p9.user-docs
     title: "User guide complete: quickstart, providers, routing, keys, dashboard, troubleshooting"
     owner: technical-writer
-    status: pending
+    status: done
     depends_on: [p9.embed-pipeline]
     deliverables:
       - "docs/ guide set verified against a clean install"
     acceptance:
       - "5-minute quickstart tested by a fresh user; all flags cross-checked"
+    evidence:
+      - "docs/quickstart.md + docs/guides/{installation,providers,routing,keys,dashboard,operations,troubleshooting}.md — command-first guides per the technical-writer charter (show the command + expected output, then the knobs); carried phase-8 observations folded in: alert on both 502/503 (operations), SSRF loopback posture + NewSSRFGuard knob (troubleshooting#security)"
+      - "scripts/docs/verify_quickstart.sh — the 5-minute quickstart executed VERBATIM against a clean install (fresh scratch data dir, freshly built single binary with embedded dashboard, bundled mock provider): 14 steps, ALL PASS — healthz, admin setup (real response shape: user+csrf session; already-created=403 setup_already_done), provider masked_key, model+rule registry settle via /v1/models, ogk mint (raw_key), routed non-stream + stream [DONE], anthropic+gemini native paths, SPA shell serves, metrics 401-gate, usage recorded, trailing-slash 404 (parity A-12), quota 429+Retry-After; wired into the CI e2e job (docs-sync gate runs on every push)"
+      - "The verifier caught and fixed SIX real doc-vs-reality bugs before shipping: invented setup response shape (real: session+csrf_token), invented masked_key format (real: first4…last4, <=8 chars=stars), invented raw-key field (real: top-level raw_key; later reads show prefix only), wrong mock behavior (fixed greeting per protocol, X-Mock-Echo header), missing model capabilities for streaming (400 no-targets), inverted SPA marker (__reactRouterContext is the REAL shell — same as the release smoke)"
+      - "All flags cross-checked: docs/cli.md stays the single flag source of truth (scripts/check_cli_docs.py in CI); guides link to it instead of duplicating tables (no drift surface); README gains a Documentation section; AGENTS.md docs row updated"
+      - "Gates at close: build/vet, -race 26 pkgs, graph --check, cli-docs, launcher 24/24, parity replay 41/41 (re-run at close); placeholder web/build/client/index.html restored after local make web (tracked file must stay the placeholder — build outputs are gitignored)"
 
   - id: p9.changelog-v1
     title: "Changelog assembly + v1.0.0 release notes from graph history"

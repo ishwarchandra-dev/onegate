@@ -132,3 +132,8 @@ jobs:
         run: bun run e2e
         env:
           CI: true
+
+      - name: Verify quickstart docs verbatim (p9.user-docs)
+        # runs the documented five-minute path end-to-end against the
+        # single-binary artifact built above (docs-sync gate)
+        run: scripts/docs/verify_quickstart.sh bin/onegate

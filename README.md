@@ -70,6 +70,16 @@ docs/                 roadmap, architecture, graph protocol, research, compat
 scripts/              graph tooling, load tests, parity + chaos harnesses
 ```
 
+## Documentation
+
+| Doc | What |
+|---|---|
+| [Quickstart](docs/quickstart.md) | Routed LLM traffic in five minutes, verified against a clean install (CI re-verifies it every push) |
+| [CLI reference](docs/cli.md) | Every command, flag, env var, exit code |
+| Guides: [installation](docs/guides/installation.md) · [providers](docs/guides/providers.md) · [routing](docs/guides/routing.md) · [keys](docs/guides/keys.md) · [dashboard](docs/guides/dashboard.md) | Operating OneGate |
+| [operations](docs/guides/operations.md) · [troubleshooting](docs/guides/troubleshooting.md) | Running in anger; symptom-first fixes |
+| [Architecture](docs/architecture.md) · [ADR decisions](docs/adr/) · [task graph protocol](docs/graph-engineering.md) | How it is built |
+
 ## How this repo is built: graph engineering
 
 Work is organized as **task graphs** (`tasks/phase-N.*.graph.yaml`) — DAGs of

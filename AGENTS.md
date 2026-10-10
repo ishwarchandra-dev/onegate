@@ -134,7 +134,7 @@ Request flow (canonical → provider → canonical):
 | `launcher/` | npm launcher package (`npx onegate`): downloads + SHA256-verifies + runs the release binary; zero deps, node:test suite |
 | `tasks/` | `phase-N.<name>.graph.yaml` task-graph DAGs (phases 0–9) |
 | `scripts/` | `graph_status.py` — board printer + `--check` validator (runs in CI) |
-| `docs/` | `architecture.md`, `graph-engineering.md`, `protocol-mappings.md`, `research/provider-quirks.md`, `adr/`, `gates/`, `reports/` |
+| `docs/` | `quickstart.md` (CI-verified), `cli.md`, `guides/` (user guide set), `architecture.md`, `graph-engineering.md`, `protocol-mappings.md`, `research/provider-quirks.md`, `compat/`, `adr/`, `gates/`, `reports/` |
 
 ## Development Commands
 
