@@ -56,7 +56,7 @@ jobs:
         include:
           - { label: linux-amd64, runner: ubuntu-latest, archive: "linux_amd64.tar.gz", bin: "linux_amd64" }
           - { label: linux-arm64, runner: ubuntu-24.04-arm, archive: "linux_arm64.tar.gz", bin: "linux_arm64" }
-          - { label: darwin-amd64, runner: macos-13, archive: "darwin_amd64.tar.gz", bin: "darwin_amd64" }
+          - { label: darwin-amd64, runner: macos-15-intel, archive: "darwin_amd64.tar.gz", bin: "darwin_amd64" }
           - { label: darwin-arm64, runner: macos-latest, archive: "darwin_arm64.tar.gz", bin: "darwin_arm64" }
           - { label: windows-amd64, runner: windows-latest, archive: "windows_amd64.exe.zip", bin: "windows_amd64.exe" }
     runs-on: ${{ matrix.runner }}
@@ -137,7 +137,7 @@ jobs:
         include:
           - { label: linux-amd64, runner: ubuntu-latest }
           - { label: linux-arm64, runner: ubuntu-24.04-arm }
-          - { label: darwin-amd64, runner: macos-13 }
+          - { label: darwin-amd64, runner: macos-15-intel }
           - { label: darwin-arm64, runner: macos-latest }
           - { label: windows-amd64, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
