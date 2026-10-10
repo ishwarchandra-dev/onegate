@@ -77,6 +77,9 @@ forward automatically on boot.
 
 ## Upgrades
 
+Dedicated guide with per-release paths: [upgrading](upgrading.md)
+(the v1.0.0 path is the OmniRoute v3.8.52 migration below).
+
 - One binary, no external services. Pin versions
   (`ghcr.io/ishwarchandra-dev/onegate:1.0.0`, release URLs with
   checksums).

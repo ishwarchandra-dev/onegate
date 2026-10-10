@@ -2,7 +2,7 @@
 phase: 8
 name: hardening
 title: "Phase 8 — Performance, Security & Resilience Hardening"
-status: pending
+status: done  # 8/8 nodes done; gate PASS recorded in docs/gates/phase-8.md (bookkeeping caught while assembling CHANGELOG v1.0.0)
 gate:
   - "Load tests: sustained RPS soak + burst within latency budgets (p99 tracked)"
   - "Chaos catalog executed; every finding fixed or node-tracked"

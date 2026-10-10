@@ -78,6 +78,7 @@ scripts/              graph tooling, load tests, parity + chaos harnesses
 | [CLI reference](docs/cli.md) | Every command, flag, env var, exit code |
 | Guides: [installation](docs/guides/installation.md) · [providers](docs/guides/providers.md) · [routing](docs/guides/routing.md) · [keys](docs/guides/keys.md) · [dashboard](docs/guides/dashboard.md) | Operating OneGate |
 | [operations](docs/guides/operations.md) · [troubleshooting](docs/guides/troubleshooting.md) | Running in anger; symptom-first fixes |
+| [Upgrading](docs/guides/upgrading.md) · [CHANGELOG](CHANGELOG.md) | Migration paths; what changed per release |
 | [Architecture](docs/architecture.md) · [ADR decisions](docs/adr/) · [task graph protocol](docs/graph-engineering.md) | How it is built |
 
 ## How this repo is built: graph engineering

@@ -113,7 +113,11 @@ jobs:
       - name: Create release with artifacts
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          # Curated notes assembled from the task graph (p9.changelog-v1);
+          # the "Added" section of the release's CHANGELOG entry is the
+          # body. For later releases: split the entry into a short
+          # per-release file instead of shipping the whole changelog.
+          body_path: CHANGELOG.md
           files: |
             dist/*.tar.gz
             dist/*.zip

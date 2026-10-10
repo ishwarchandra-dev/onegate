@@ -120,12 +120,18 @@ nodes:
   - id: p9.changelog-v1
     title: "Changelog assembly + v1.0.0 release notes from graph history"
     owner: release-manager
-    status: pending
+    status: done
     depends_on: [p9.build-matrix, p9.docker, p9.npx-launcher, p9.cli-polish, p9.user-docs]
     deliverables:
       - "CHANGELOG.md + release notes + upgrade guide"
     acceptance:
       - "Notes assembled from done-nodes; upgrade path from OmniRoute documented"
+    evidence:
+      - "CHANGELOG.md (Keep-a-Changelog 1.1.0): v1.0.0 assembled from the 86 done-nodes and their evidence — every entry sourced from tasks/*.graph.yaml deliverables + gate reports, grouped Added (core/compat+migration/hardening/distribution+tooling) + Security + Deprecated(none)/Fixed(none pre-GA; in-release CC-14 correction recorded); no memory-written notes (release-manager charter)"
+      - "docs/guides/upgrading.md — the upgrade path: OmniRoute v3.8.52 -> OneGate v1.0.0 (5 steps: dry-run survey -> apply with re-minted keys + aggregate-preserving history -> admin setup -> redistribute ogk keys -> cut over; intentional-differences table incl. A-11 envelope note; rollback story). operations.md Upgrades section links it; README gains CHANGELOG + Upgrading rows"
+      - "GitHub release notes: release.yaml now uses body_path: CHANGELOG.md (curated, graph-assembled) instead of generate_release_notes; comment explains the per-release file convention for future tags"
+      - "Bookkeeping caught during assembly: phase-8 graph status was still 'pending' despite 8/8 done + gate PASS (docs/gates/phase-8.md) — flipped to done with an inline justification; phase-9 status flips at its own gate"
+      - "Numbers cross-checked against the evidence packs before writing: parity 41/41, e2e 10/10, p99 2.3ms soak, -44..-56% hot path, 6646/6646 kill -9 durability, 6-target matrix, 26 race-clean packages"
 
   - id: p9.gate
     title: "Phase 9 gate: v1.0.0 ship decision"
