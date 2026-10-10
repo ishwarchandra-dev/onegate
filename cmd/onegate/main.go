@@ -33,6 +33,8 @@ import (
 	"github.com/ishwarchandra-dev/onegate/internal/server"
 	"github.com/ishwarchandra-dev/onegate/internal/storage"
 	"github.com/ishwarchandra-dev/onegate/internal/version"
+	"github.com/ishwarchandra-dev/onegate/internal/webfs"
+	web "github.com/ishwarchandra-dev/onegate/web"
 )
 
 func main() {
@@ -241,9 +243,22 @@ func run() error {
 	// -> recover) and the listener timeout policy. The ingest
 	// endpoints authenticate and decode onto the mux, forwarding
 	// execution to the fallback engine.
+	// --- embedded dashboard (p9.embed-pipeline, ADR 006) ---------------
+	// Built before the router so it can own the exact root via the
+	// Options.Root seam (replacing the pre-dashboard landing page);
+	// the "GET /" catch-all registered below serves every other
+	// non-API path with the SPA fallback (index.html). /healthz,
+	// /metrics, /api/*, /v1/* and the gemini paths are more specific
+	// mux patterns and win — one port serves dashboard + API + proxy.
+	dashboard := webfs.New(web.Dist())
+	if dashboard.IsPlaceholder() {
+		logger.Warn("dashboard not embedded: serving placeholder (run: make web && make build)")
+	}
+
 	router := server.New(server.Options{
 		Logger:  logger,
 		Metrics: metricsRegistry,
+		Root:    dashboard,
 		Timeouts: server.Timeouts{
 			ReadHeader: time.Duration(cfg.HTTP.ReadHeaderTimeoutMS) * time.Millisecond,
 			Read:       time.Duration(cfg.HTTP.ReadTimeoutMS) * time.Millisecond,
@@ -253,6 +268,7 @@ func run() error {
 		Version:       version.Version,
 		SchemaVersion: schemaVer,
 	})
+	router.Mux().Handle("GET /", dashboard)
 	ingest.Register(router.Mux(), ingest.Deps{
 		Auth:   verifier,
 		Proxy:  qp,
@@ -295,6 +311,7 @@ func run() error {
 		SchemaVersion: schemaVer,
 		Prober:        upstreamClient,
 	})
+
 	srv := router.Server(fmt.Sprintf("%s:%d", cfg.Host, cfg.Port))
 
 	errCh := make(chan error, 1)

@@ -5,15 +5,15 @@ import { join } from "node:path"
 const ROOT = join(import.meta.dirname, "..")
 
 /**
- * E2E suite for the OneGate dashboard (p6.e2e-dashboard).
+ * E2E suite for the OneGate dashboard.
  *
- * Three servers boot before the tests:
- *   1. the real gateway binary (built from the repo root) on :7420 with
- *      a fresh temp data dir
+ * Two servers boot before the tests (p9.embed-pipeline: the dashboard
+ * now ships INSIDE the gateway binary, so the journeys run against the
+ * real single-binary artifact — no vite preview hop anymore):
+ *   1. the real gateway binary on :7420 (fresh temp data dir) serving
+ *      dashboard + /api + proxy on one port
  *   2. a mock provider (openai-style /models) on :9441 for the
  *      connection-probe journey
- *   3. the built dashboard via `vite preview` on :4173, proxying /api
- *      to the gateway (mirrors the dev proxy)
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -33,7 +33,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["list"]] : [["list"]],
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: "http://127.0.0.1:7420",
     trace: "retain-on-failure",
   },
   webServer: [
@@ -50,13 +50,6 @@ export default defineConfig({
       url: "http://127.0.0.1:9441/healthz",
       reuseExistingServer: false,
       timeout: 15_000,
-      stdout: "ignore",
-    },
-    {
-      command: "bun run preview",
-      url: "http://127.0.0.1:4173/",
-      reuseExistingServer: false,
-      timeout: 30_000,
       stdout: "ignore",
     },
   ],

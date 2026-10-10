@@ -61,6 +61,12 @@ type Options struct {
 	// minimal registry, which also serves /metrics. Phase 5 injects the
 	// full Prometheus registry here (p5.metrics).
 	Metrics Metrics
+
+	// Root, when set, replaces the default landing page at "GET /"
+	// (p9.embed-pipeline: the embedded dashboard). The handler also
+	// covers the "GET /" catch-all registered by cmd/onegate for SPA
+	// route fallback.
+	Root http.Handler
 }
 
 // Router is OneGate's HTTP front door. Routes are registered on Mux
@@ -101,7 +107,14 @@ func New(opts Options) *Router {
 	// r.Mux().Handle("POST /v1/chat/completions", ...).
 	r.mux.HandleFunc("GET /healthz", r.handleHealth)
 	r.mux.Handle("GET /metrics", mx.Handler())
-	r.mux.HandleFunc("GET /{$}", r.handleLanding)
+	if opts.Root != nil {
+		// p9.embed-pipeline: the embedded dashboard owns the
+		// exact root; the landing page was the pre-dashboard
+		// placeholder.
+		r.mux.Handle("GET /{$}", opts.Root)
+	} else {
+		r.mux.HandleFunc("GET /{$}", r.handleLanding)
+	}
 
 	r.handler = r.chain(r.mux)
 	return r

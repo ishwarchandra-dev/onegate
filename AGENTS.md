@@ -163,12 +163,15 @@ make api-gen                # regenerate internal/api/spec_gen.go + web client
 make api-check              # CI: fail when generated artifacts are stale
 ```
 
-CI (`.github/workflows/ci.yaml`, push to main + all PRs) runs four parallel
-jobs — **go** (`go build/vet/test`), **web** (`bun install` + `bun run
-build`), **graph** (`graph_status.py --check` + generated-artifact freshness),
-**e2e** (playwright journeys: real gateway binary + built dashboard + mock
-provider). Keep all four green. `-race` and `make lint` are local gates
-(AGENTS.md, phase-gate docs), not CI jobs.
+CI (`.github/workflows/ci.yaml`, push to main + all PRs) runs six parallel
+jobs — **go** (`go build/vet/test`), **vuln** (govulncheck, toolchain
+pinned in go.mod), **fuzz** (15 targets × 10s smoke bursts), **web**
+(`bun install` + `bun run build`), **graph** (`graph_status.py --check`
++ generated-artifact freshness), **e2e** (playwright journeys against
+the **embedded** single-binary artifact: UI + API + proxy on one port,
+plus the placeholder-refusal gate `ONEGATE_REQUIRE_EMBED=1`). Keep all
+six green. `-race` and `make lint` are local gates (AGENTS.md,
+phase-gate docs), not CI jobs.
 
 ## Code Conventions & Common Patterns
 

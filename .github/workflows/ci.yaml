@@ -104,16 +104,21 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Build gateway
-        run: make build
-
       - name: Install dashboard dependencies
         working-directory: web
         run: bun install
 
-      - name: Build dashboard
+      - name: Build dashboard (embedded into the binary below)
         working-directory: web
         run: bun run build
+
+      - name: Build gateway (single binary: UI + API + proxy)
+        run: make build
+
+      - name: Refuse placeholder dashboard (p9.embed-pipeline gate)
+        run: go test ./cmd/onegate -run TestEmbeddedDashboardNotPlaceholder -count=1
+        env:
+          ONEGATE_REQUIRE_EMBED: "1"
 
       - name: Install playwright browsers
         working-directory: web

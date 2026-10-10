@@ -27,12 +27,17 @@ nodes:
   - id: p9.embed-pipeline
     title: "Embed pipeline: web build → go:embed → single binary serving UI"
     owner: go-engineer
-    status: pending
+    status: done
     depends_on: [p9.embed-decision]
     deliverables:
       - "internal/webfs embed + CI gate refusing builds without dashboard"
     acceptance:
       - "Binary serves dashboard, API, and proxy on one port; gzip/br where applicable"
+    evidence:
+      - "web/embed.go (go:embed all:build/client; lives in web/ because patterns cannot traverse up) + internal/webfs serving layer: SPA fallback (no-cache), hashed-asset immutable cache, stale-hash 404 (never HTML fallback), build-time gzip siblings with Accept-Encoding negotiation + Vary, traversal guard, 8 unit tests"
+      - "Committed placeholder web/build/client/index.html keeps fresh-clone `go build ./...` green (verified); real pipeline `make web` (build + gzip -9 precompress) then `make build`; placeholder refusal via ONEGATE_REQUIRE_EMBED=1 test in cmd/onegate, wired into the CI e2e job (build dashboard -> make build -> refusal gate)"
+      - "Live smoke: one port serves / (SPA), /providers (fallback 200 no-cache), assets (raw 211KB / gzipped 65.5KB, immutable), /api/system/status (401 envelope), /healthz; server.Options.Root seam replaces the pre-dashboard landing page"
+      - "E2E migrated off vite preview onto the embedded artifact: 10/10 journeys green against gateway :7420; full -race suite + vet + graph + api-check green; AGENTS.md CI section updated (6 jobs)"
 
   - id: p9.build-matrix
     title: "Cross-compile release matrix + checksums + provenance manifest"

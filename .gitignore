@@ -7,7 +7,13 @@ coverage.*
 
 # Node
 node_modules/
-web/build/
+# Dashboard build output — everything except the committed placeholder
+# (web/build/client/index.html), which keeps `go build ./...` working on
+# fresh clones without a Node toolchain (p9.embed-pipeline, ADR 006).
+web/build/*
+!web/build/client
+web/build/client/*
+!web/build/client/index.html
 web/.react-router/
 
 # OneGate runtime state

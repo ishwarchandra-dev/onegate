@@ -13,7 +13,7 @@ LDFLAGS := -X $(PKG)/internal/version.Version=$(VERSION) \
            -X $(PKG)/internal/version.GitCommit=$(COMMIT) \
            -X $(PKG)/internal/version.BuildDate=$(DATE)
 
-.PHONY: build run test vet fmt lint graph web-install web-dev web web-typecheck api-gen api-check clean
+.PHONY: build build-all run test vet fmt lint graph web-install web-dev web web-typecheck api-gen api-check clean
 
 ## build: compile the onegate binary into bin/
 build:
@@ -51,9 +51,20 @@ web-install:
 web-dev:
 	cd web && bun run dev
 
-## web: production build of the dashboard (output: web/build)
+## web: production build of the dashboard (output: web/build/client)
+## + build-time gzip precompression (served by internal/webfs when the
+## client sends Accept-Encoding: gzip; already-compressed assets are
+## skipped: woff2/png/ico).
 web:
 	cd web && bun run build
+	find web/build/client -type f \
+		! -name '*.gz' ! -name '*.woff2' ! -name '*.png' ! -name '*.ico' \
+		-exec gzip -9 -k {} \;
+
+## build-all: dashboard + binary in one shot (the single-binary pipeline
+## of p9.embed-pipeline; `make build` alone embeds whatever dist exists —
+## on a fresh clone that is the placeholder, see ADR 006)
+build-all: web build
 
 ## web-typecheck: typecheck the dashboard
 web-typecheck:
