@@ -4,7 +4,9 @@ node_modules
 
 # React Router
 .react-router
-build
+# build/ is owned by the root .gitignore (web/build/* with the committed
+# placeholder exception, p9.embed-pipeline) — a `build` pattern here would
+# ignore the directory wholesale and defeat the !index.html re-include.
 
 # typescript
 *.tsbuildinfo
