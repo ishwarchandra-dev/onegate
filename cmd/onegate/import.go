@@ -1,5 +1,6 @@
 // `onegate import` — migrate a legacy OmniRoute v3.8.52 installation
-// into OneGate storage (p7.config-import). Dry-run by default.
+// into OneGate storage (p7.config-import). Dry-run by default;
+// `--apply` writes the plan. Full reference: docs/cli.md.
 package main
 
 import (
@@ -13,18 +14,48 @@ import (
 	"github.com/ishwarchandra-dev/onegate/internal/storage"
 )
 
-func runImport(args []string) error {
+// importOpts holds parsed import flags.
+type importOpts struct {
+	dataDir string
+	apply   bool
+}
+
+// importFlags defines the import flag set (shared by -h and parse).
+func importFlags() (*flag.FlagSet, *importOpts) {
 	fs := flag.NewFlagSet("onegate import", flag.ContinueOnError)
-	var (
-		flagDataDir = fs.String("data-dir", ".onegate", "OneGate data directory (import destination)")
-		flagApply   = fs.Bool("apply", false, "apply the plan (default: dry-run)")
-	)
+	o := &importOpts{}
+	fs.StringVar(&o.dataDir, "data-dir", ".onegate", "OneGate data directory (import destination)")
+	fs.BoolVar(&o.apply, "apply", false, "apply the plan (default: dry-run, nothing is written)")
+	fs.Usage = helpScreen(fs, "import", "migrate a legacy OmniRoute install into this data dir (dry-run by default)",
+		"onegate import <omniroute.json> [--apply] [--data-dir DIR]",
+		[]string{
+			"onegate import omniroute.json                       # plan only, nothing written",
+			"onegate import omniroute.json --apply --data-dir /var/lib/onegate",
+			"onegate import-keys omniroute.json                  # keys + usage history (separate command)",
+		})
+	return fs, o
+}
+
+// runImport implements the import subcommand.
+func runImport(args []string) error {
+	if helpRequested(args) {
+		fs, _ := importFlags()
+		printHelp(fs, os.Stdout)
+		return nil
+	}
+	fs, o := importFlags()
 	if err := fs.Parse(args); err != nil {
-		return err
+		if isFlagHelp(err) {
+			printHelp(fs, os.Stdout)
+			return nil
+		}
+		return newUsageErrorf("%v", err)
 	}
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: onegate import <omniroute.json> [--apply] [--data-dir DIR]\n" +
-			"       (keys and usage history import: `onegate import-keys`, p7.data-import)")
+		return newUsageErrorf(
+			"import needs exactly one file argument (the legacy omniroute.json), got %d — run `onegate import -h`",
+			fs.NArg(),
+		)
 	}
 	legacyPath := fs.Arg(0)
 
@@ -38,10 +69,10 @@ func runImport(args []string) error {
 	}
 
 	// Destination store: open + migrate the OneGate data dir.
-	if err := os.MkdirAll(*flagDataDir, 0o755); err != nil {
+	if err := os.MkdirAll(o.dataDir, 0o755); err != nil {
 		return fmt.Errorf("import: create data dir: %w", err)
 	}
-	store, err := storage.Open(filepath.Join(*flagDataDir, "onegate.db"))
+	store, err := storage.Open(filepath.Join(o.dataDir, "onegate.db"))
 	if err != nil {
 		return fmt.Errorf("import: open storage: %w", err)
 	}
@@ -55,18 +86,18 @@ func runImport(args []string) error {
 		return err
 	}
 
-	fmt.Println(importer.ReportHeader(plan, *flagApply))
+	fmt.Println(importer.ReportHeader(plan, o.apply))
 	fmt.Println()
 	fmt.Println(importer.Report(plan))
 
-	if !*flagApply {
+	if !o.apply {
 		fmt.Println()
 		fmt.Println("dry-run: nothing written — re-run with --apply")
 		return nil
 	}
 
 	// Master key + cipher for sealing provider credentials.
-	masterPath := filepath.Join(*flagDataDir, "master.key")
+	masterPath := filepath.Join(o.dataDir, "master.key")
 	master, err := auth.MasterSecret(masterPath)
 	if err != nil {
 		return fmt.Errorf("import: master key: %w", err)

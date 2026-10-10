@@ -4,10 +4,20 @@
 // gateway with an embedded management dashboard, provider routing,
 // fallback chains and usage analytics.
 //
-// Phase 1 wires the foundation: config resolution (flags > env > file >
-// defaults) with hot reload, structured redacting logs, and the embedded
-// SQLite store with schema migrations. The proxy core lands in Phase 3
-// (see tasks/phase-3.proxy-core.graph.yaml).
+// CLI surface (p9.cli-polish; full reference in docs/cli.md):
+//
+//	onegate serve [flags]        run the gateway (default when no
+//	                             subcommand is given — `onegate [flags]`
+//	                             keeps working)
+//	onegate import <file>        migrate an OmniRoute install (dry-run
+//	                             by default, --apply to write)
+//	onegate import-keys <file>   migrate virtual keys + usage history
+//	onegate config [flags]       print the fully resolved runtime
+//	                             configuration as JSON and exit
+//	onegate -version             print version and exit
+//	onegate help | -h            help
+//
+// Exit codes: 0 success (incl. -h), 1 runtime error, 2 usage error.
 package main
 
 import (
@@ -15,9 +25,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -38,65 +50,151 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "onegate: %v\n", err)
-		os.Exit(1)
+	err := run(os.Args[1:])
+	if err == nil {
+		return
 	}
+	code := 1
+	var ue *usageError
+	if errors.As(err, &ue) {
+		code = 2
+	}
+	fmt.Fprintf(os.Stderr, "onegate: %v\n", err)
+	os.Exit(code)
 }
 
-func run() error {
-	// --- subcommands ----------------------------------------------------
-	// `onegate import <path>` migrates a legacy OmniRoute install
-	// (p7.config-import); everything else serves.
-	switch {
-	case len(os.Args) > 1 && os.Args[1] == "import":
-		return runImport(os.Args[2:])
-	case len(os.Args) > 1 && os.Args[1] == "import-keys":
-		return runImportKeys(os.Args[2:])
-	}
-
-	// --- flags (highest precedence) -----------------------------------
-	fs := flag.NewFlagSet("onegate", flag.ContinueOnError)
-	var (
-		flagHost     = fs.String("host", "", "address to listen on (overrides config/env)")
-		flagPort     = fs.Int("port", 0, "port to listen on (overrides config/env)")
-		flagDataDir  = fs.String("data-dir", "", "data directory (overrides config/env)")
-		flagLogLevel = fs.String("log-level", "", "debug|info|warn|error (overrides config/env)")
-		flagConfig   = fs.String("config", "", "explicit config file path (default: discovery)")
-		showVersion  = fs.Bool("version", false, "print version and exit")
-	)
-	if err := fs.Parse(os.Args[1:]); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+// run dispatches subcommands. A first token starting with "-" is a flag
+// for the implicit serve path (`onegate -port 8000` still serves);
+// anything else that is not a known subcommand is a usage error.
+func run(args []string) error {
+	if len(args) > 0 {
+		cmd, rest := args[0], args[1:]
+		switch cmd {
+		case "import":
+			return runImport(rest)
+		case "import-keys":
+			return runImportKeys(rest)
+		case "serve":
+			return runServe(rest)
+		case "config":
+			return runConfigCmd(rest, os.Stdout)
+		case "help", "-h", "--help":
+			printTopHelp(os.Stdout)
 			return nil
 		}
-		return err
+		if !strings.HasPrefix(cmd, "-") {
+			return newUsageErrorf("unknown command %q — run `onegate help` for the command list", cmd)
+		}
 	}
-	if *showVersion {
+	return runServe(args)
+}
+
+// printTopHelp renders the command list (onegate help / onegate -h).
+func printTopHelp(w io.Writer) {
+	fmt.Fprintf(w, `onegate — single-binary LLM gateway (OpenAI / Anthropic / Gemini, one endpoint)
+
+Usage:
+  onegate <command> [flags]
+  onegate [flags]                 same as "onegate serve" (back-compat)
+
+Commands:
+  serve           run the gateway (dashboard + API + proxy on one port)
+  import          migrate a legacy OmniRoute install into this data dir
+  import-keys     migrate legacy virtual keys and usage history
+  config          print the fully resolved runtime configuration
+  help            show this list; "<command> -h" shows command help
+
+Flags:
+  -version        print version and exit
+
+Examples:
+  onegate serve -port 8000 -log-level debug
+  onegate config | jq .http
+  onegate import omniroute.json            # dry-run plan
+  onegate import omniroute.json --apply    # write it
+
+Full reference: docs/cli.md
+`)
+}
+
+// runServe wires and runs the gateway (the composition root).
+func runServe(args []string) error {
+	if helpRequested(args) {
+		fs, _ := serveFlags()
+		printHelp(fs, os.Stdout)
+		return nil
+	}
+	fs, opts := serveFlags()
+	if err := fs.Parse(args); err != nil {
+		if isFlagHelp(err) {
+			printHelp(fs, os.Stdout)
+			return nil
+		}
+		return newUsageErrorf("%v", err)
+	}
+	if opts.version {
 		fmt.Println(version.String())
 		return nil
 	}
 
 	// --- config: defaults <- file <- env, then flag overrides ---------
-	cfg, err := config.Load(config.LoadOptions{Path: *flagConfig})
+	cfg, err := config.Load(config.LoadOptions{Path: opts.config})
 	if err != nil {
 		return err
 	}
-	if *flagHost != "" {
-		cfg.Host = *flagHost
+	if opts.host != "" {
+		cfg.Host = opts.host
 	}
-	if *flagPort != 0 {
-		cfg.Port = *flagPort
+	if opts.port != 0 {
+		cfg.Port = opts.port
 	}
-	if *flagDataDir != "" {
-		cfg.DataDir = *flagDataDir
+	if opts.dataDir != "" {
+		cfg.DataDir = opts.dataDir
 	}
-	if *flagLogLevel != "" {
-		cfg.LogLevel = *flagLogLevel
+	if opts.logLevel != "" {
+		cfg.LogLevel = opts.logLevel
 	}
 	if err := config.Validate(cfg); err != nil {
 		return err
 	}
 
+	return serve(cfg, opts.config)
+}
+
+// serveOpts holds the parsed serve/config flag values (bound by
+// serveFlags so -h and parsing share one definition).
+type serveOpts struct {
+	host     string
+	port     int
+	dataDir  string
+	logLevel string
+	config   string
+	version  bool
+}
+
+// serveFlags builds the serve flag set (shared by -h and parse).
+func serveFlags() (*flag.FlagSet, *serveOpts) {
+	fs := flag.NewFlagSet("onegate serve", flag.ContinueOnError)
+	o := &serveOpts{}
+	fs.StringVar(&o.host, "host", "", "address to listen on (default 127.0.0.1; overrides config/env)")
+	fs.IntVar(&o.port, "port", 0, "port to listen on (default 7420; overrides config/env)")
+	fs.StringVar(&o.dataDir, "data-dir", "", "data directory for onegate.db + master.key (default .onegate; overrides config/env)")
+	fs.StringVar(&o.logLevel, "log-level", "", "debug | info | warn | error (default info; overrides config/env)")
+	fs.StringVar(&o.config, "config", "", "explicit config file path (default: $ONEGATE_CONFIG, ./onegate.json, ~/.onegate/onegate.json)")
+	fs.BoolVar(&o.version, "version", false, "print version and exit")
+	fs.Usage = helpScreen(fs, "serve", "run the gateway: dashboard, API and proxy on one port",
+		"onegate [serve] [-host H] [-port P] [-data-dir DIR] [-log-level L] [-config FILE]",
+		[]string{
+			"onegate serve -port 8000 -log-level debug",
+			"onegate -data-dir /var/lib/onegate   # flags work without the subcommand too",
+		})
+	return fs, o
+}
+
+// serve boots storage, auth, routing, the proxy and the HTTP server,
+// then blocks until SIGINT/SIGTERM. This is the Phase 1-9 composition
+// root; it is the only place allowed to import everything.
+func serve(cfg config.Config, flagConfig string) error {
 	logHub := observability.NewLogHub(1000)
 	logger := observability.NewLoggerWithHub(cfg.LogLevel, os.Stdout, logHub)
 
@@ -121,7 +219,7 @@ func run() error {
 
 	var watcher *config.Watcher
 	if cfg.Reload.Enabled {
-		watcher = config.NewWatcher(*flagConfig, cfg, cfg.Reload.PollMS, logger)
+		watcher = config.NewWatcher(flagConfig, cfg, cfg.Reload.PollMS, logger)
 		watcher.Start(ctx)
 		defer watcher.Stop()
 	}
@@ -238,18 +336,16 @@ func run() error {
 	// upstream work; actual usage debits after completion.
 	qp = newQuotaProxy(fallbackEngine, quotaManager, metricsRegistry)
 
-	// --- HTTP server (p3.http-server + p3.ingest-endpoints) ------------
-	// The router owns the middleware chain (request-id -> access-log
-	// -> recover) and the listener timeout policy. The ingest
-	// endpoints authenticate and decode onto the mux, forwarding
-	// execution to the fallback engine.
 	// --- embedded dashboard (p9.embed-pipeline, ADR 006) ---------------
 	// Built before the router so it can own the exact root via the
 	// Options.Root seam (replacing the pre-dashboard landing page);
-	// the "GET /" catch-all registered below serves every other
-	// non-API path with the SPA fallback (index.html). /healthz,
+	// the method-less "/" catch-all registered below serves every other
+	// unmatched path with the SPA fallback (index.html). /healthz,
 	// /metrics, /api/*, /v1/* and the gemini paths are more specific
 	// mux patterns and win — one port serves dashboard + API + proxy.
+	// The catch-all is method-less (not "GET /") and webfs answers
+	// non-GET/HEAD with 404, so would-be-404s stay 404s (parity
+	// A-12/CC-14: POST /v1/messages/ must not silently match).
 	dashboard := webfs.New(web.Dist())
 	if dashboard.IsPlaceholder() {
 		logger.Warn("dashboard not embedded: serving placeholder (run: make web && make build)")
@@ -268,7 +364,7 @@ func run() error {
 		Version:       version.Version,
 		SchemaVersion: schemaVer,
 	})
-	router.Mux().Handle("GET /", dashboard)
+	router.Mux().Handle("/", dashboard)
 	ingest.Register(router.Mux(), ingest.Deps{
 		Auth:   verifier,
 		Proxy:  qp,

@@ -231,7 +231,7 @@ tag `v*`, `release.yaml` (build matrix → native smokes → GitHub Release
 
 | File | Role |
 | --- | --- |
-| `cmd/onegate/main.go` | Entry point; all wiring. Flags `-host -port -data-dir -log-level -config -version` |
+| `cmd/onegate/main.go` | Entry point; all wiring. Subcommands `serve` (default) / `import` / `import-keys` / `config` / `help`; flags `-host -port -data-dir -log-level -config -version`; exit codes 0/1/2 (docs/cli.md, enforced by scripts/check_cli_docs.py) |
 | `internal/domain/{domain,protocol}.go` | Canonical model; the contract everything else speaks |
 | `internal/protocol/protocol.go` | Adapter layering contract (what adapters may import) |
 | `internal/proxy/ingest/ingest.go` | Client-facing endpoints; auth + body caps + decode |

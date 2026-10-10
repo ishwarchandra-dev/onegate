@@ -90,6 +90,9 @@ jobs:
           python3 scripts/gen_api_client.py --check
           python3 scripts/check_openapi.py
 
+      - name: Check CLI reference is fresh (every flag documented)
+        run: python3 scripts/check_cli_docs.py
+
   e2e:
     name: Dashboard E2E (playwright)
     runs-on: ubuntu-latest

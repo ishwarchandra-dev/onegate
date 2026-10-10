@@ -8,7 +8,7 @@ usage analytics, and an embedded management dashboard — no Node runtime, no
 docker-compose, one static binary.
 
 ```
-npx onegate          # or: ./onegate serve
+npx onegate          # or: ./onegate serve (CLI reference: docs/cli.md)
 ```
 
 | | |

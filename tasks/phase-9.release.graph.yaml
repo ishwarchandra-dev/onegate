@@ -87,12 +87,19 @@ nodes:
   - id: p9.cli-polish
     title: "CLI surface: onegate serve/import/keys/version/config with help text review"
     owner: technical-writer
-    status: pending
+    status: done
     depends_on: [p9.embed-pipeline, p7.config-import]
     deliverables:
       - "CLI reference docs + consistent flags + exit codes"
     acceptance:
       - "Every flag documented; exit codes table published"
+    evidence:
+      - "cmd/onegate restructured: run() dispatches serve (default, back-compat `onegate [flags]`) / import / import-keys / config (new: prints fully-resolved runtime config as JSON, same precedence flags>env>file>defaults, no secrets by construction) / help; unknown first token that is not a flag is now a usage error instead of silently serving"
+      - "Exit codes published: 0 success (incl. -h/--help to stdout), 1 runtime, 2 usage (usageError type; flag parse errors and arg-count mismatches map to 2). Help pre-scan lands -h on stdout exit 0; per-command help screens via helpScreen() with one-voice copy, examples, docs/cli.md pointer"
+      - "docs/cli.md — complete reference: command tree, per-command flag tables (types/defaults/env/config keys), config-file JSON shape, env var table (incl. launcher vars + ONEGATE_REQUIRE_EMBED), version output, examples; exit-code tables for both the binary (0/1/2) and the launcher (1/2/3/4 + 128+N signal convention)"
+      - "scripts/check_cli_docs.py — mechanical docs-sync gate (regex scan of cmd/onegate flag registrations vs docs/cli.md + subcommand + exit-row presence); validated positive AND negative (removed flag correctly fails); wired into the CI graph job next to api-check"
+      - "cmd/onegate/cli_test.go — 24 tests in two layers: unit (dispatch, usage mapping, config JSON/precedence/positional-refusal) + subprocess matrix against a once-built binary asserting the real exit-code contract (help 0/usage 2/runtime 1, stderr vs stdout routing, env-then-flag precedence live); TestCLIHelpScreensListEveryFlag cross-checks -h output against the registered flag sets"
+      - "Gates at close: gofmt/build/vet green, -race 26 pkgs, graph --check OK, cli-docs check OK, launcher tests green, parity replay 41/41 (after the CC-14 fix commit — the replay also caught a pre-existing regression from p9.embed-pipeline: 'GET /' catch-all made unmatched non-GET 405 instead of 404; fixed by method-less '/' + webfs 404, see the follow-up commit); AGENTS.md entry-point row + README pointer updated; commit hygiene note: initial mixed commit restructured (soft reset) so every pushed commit builds standalone"
 
   - id: p9.user-docs
     title: "User guide complete: quickstart, providers, routing, keys, dashboard, troubleshooting"

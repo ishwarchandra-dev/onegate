@@ -1,6 +1,7 @@
 // `onegate import-keys` — migrate legacy virtual keys and usage history
 // (p7.data-import). Dry-run by default; raw keys are shown exactly once
 // under --apply (written to --keys-out, mode 0600, or stdout).
+// Full reference: docs/cli.md.
 package main
 
 import (
@@ -14,19 +15,51 @@ import (
 	"github.com/ishwarchandra-dev/onegate/internal/storage"
 )
 
-func runImportKeys(args []string) error {
+// importKeysOpts holds parsed import-keys flags.
+type importKeysOpts struct {
+	dataDir string
+	apply   bool
+	usageDB string
+	keysOut string
+}
+
+// importKeysFlags defines the import-keys flag set (shared by -h and parse).
+func importKeysFlags() (*flag.FlagSet, *importKeysOpts) {
 	fs := flag.NewFlagSet("onegate import-keys", flag.ContinueOnError)
-	var (
-		flagDataDir = fs.String("data-dir", ".onegate", "OneGate data directory (import destination)")
-		flagApply   = fs.Bool("apply", false, "apply the import (default: dry-run)")
-		flagUsageDB = fs.String("usage-db", "", "legacy omniroute.db to import usage history from (read-only)")
-		flagKeysOut = fs.String("keys-out", "", "write minted raw keys to this file (0600) instead of stdout")
-	)
+	o := &importKeysOpts{}
+	fs.StringVar(&o.dataDir, "data-dir", ".onegate", "OneGate data directory (import destination)")
+	fs.BoolVar(&o.apply, "apply", false, "apply the import (default: dry-run, nothing is written)")
+	fs.StringVar(&o.usageDB, "usage-db", "", "legacy omniroute.db to import usage history from (read-only)")
+	fs.StringVar(&o.keysOut, "keys-out", "", "write minted raw keys to this file (mode 0600) instead of stdout")
+	fs.Usage = helpScreen(fs, "import-keys", "migrate legacy virtual keys and usage history (raw keys are re-minted, shown once)",
+		"onegate import-keys <omniroute.json> [--apply] [--usage-db PATH] [--keys-out FILE] [--data-dir DIR]",
+		[]string{
+			"onegate import-keys omniroute.json --apply --usage-db legacy/omniroute.db --keys-out /root/new-keys.txt",
+			"# legacy key hashes are unrecoverable by design: keys are re-minted and must be re-distributed",
+		})
+	return fs, o
+}
+
+// runImportKeys implements the import-keys subcommand.
+func runImportKeys(args []string) error {
+	if helpRequested(args) {
+		fs, _ := importKeysFlags()
+		printHelp(fs, os.Stdout)
+		return nil
+	}
+	fs, o := importKeysFlags()
 	if err := fs.Parse(args); err != nil {
-		return err
+		if isFlagHelp(err) {
+			printHelp(fs, os.Stdout)
+			return nil
+		}
+		return newUsageErrorf("%v", err)
 	}
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: onegate import-keys <omniroute.json> [--apply] [--usage-db PATH] [--keys-out FILE] [--data-dir DIR]")
+		return newUsageErrorf(
+			"import-keys needs exactly one file argument (the legacy omniroute.json), got %d — run `onegate import-keys -h`",
+			fs.NArg(),
+		)
 	}
 	legacyPath := fs.Arg(0)
 
@@ -39,29 +72,29 @@ func runImportKeys(args []string) error {
 		return err
 	}
 
-	usage, err := importer.ReadLegacyUsage(*flagUsageDB)
+	usage, err := importer.ReadLegacyUsage(o.usageDB)
 	if err != nil {
 		return err
 	}
 
-	if !*flagApply {
+	if !o.apply {
 		fmt.Println("onegate import-keys — dry-run (no changes written; pass --apply)")
 		fmt.Println()
 		fmt.Printf("keys: %d legacy entries, %d revoked-status, %d active-status\n",
 			len(inst.Keys), countStatus(inst.Keys, "revoked"), countStatus(inst.Keys, "active"))
 		if len(usage) > 0 {
 			fmt.Printf("usage events: %d rows read from %s (models and keys are resolved at apply time)\n",
-				len(usage), *flagUsageDB)
+				len(usage), o.usageDB)
 		}
 		fmt.Println()
 		fmt.Println("dry-run: nothing written — re-run with --apply")
 		return nil
 	}
 
-	if err := os.MkdirAll(*flagDataDir, 0o755); err != nil {
+	if err := os.MkdirAll(o.dataDir, 0o755); err != nil {
 		return fmt.Errorf("import-keys: create data dir: %w", err)
 	}
-	store, err := storage.Open(filepath.Join(*flagDataDir, "onegate.db"))
+	store, err := storage.Open(filepath.Join(o.dataDir, "onegate.db"))
 	if err != nil {
 		return fmt.Errorf("import-keys: open storage: %w", err)
 	}
@@ -70,7 +103,7 @@ func runImportKeys(args []string) error {
 		return fmt.Errorf("import-keys: migrate storage: %w", err)
 	}
 
-	masterPath := filepath.Join(*flagDataDir, "master.key")
+	masterPath := filepath.Join(o.dataDir, "master.key")
 	master, err := auth.MasterSecret(masterPath)
 	if err != nil {
 		return fmt.Errorf("import-keys: master key: %w", err)
@@ -99,8 +132,8 @@ func runImportKeys(args []string) error {
 	// Show-once raw keys: file (0600) or stdout.
 	if len(keyRes.Minted) > 0 {
 		out := os.Stdout
-		if *flagKeysOut != "" {
-			f, err := os.OpenFile(*flagKeysOut, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+		if o.keysOut != "" {
+			f, err := os.OpenFile(o.keysOut, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 			if err != nil {
 				return fmt.Errorf("import-keys: keys-out: %w", err)
 			}
@@ -113,8 +146,8 @@ func runImportKeys(args []string) error {
 				fmt.Fprintf(out, "%s\t%s\t%s\n", k.RawKey, k.Name, k.LegacyID)
 			}
 		}
-		if *flagKeysOut != "" {
-			fmt.Printf("\nraw keys written to %s (mode 0600) — NOT shown again\n", *flagKeysOut)
+		if o.keysOut != "" {
+			fmt.Printf("\nraw keys written to %s (mode 0600) — NOT shown again\n", o.keysOut)
 		} else {
 			fmt.Println("\nraw keys above — shown ONCE; store them securely now")
 		}
