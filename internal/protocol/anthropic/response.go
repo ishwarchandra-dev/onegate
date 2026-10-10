@@ -102,7 +102,7 @@ func DecodeUsage(w wireUsage) domain.TokenUsage {
 		OutputTokens:     w.OutputTokens,
 		CacheWriteTokens: w.CacheCreationInputTokens,
 		CacheReadTokens:  w.CacheReadInputTokens,
-	}.WithTotalDerivation()
+	}.WithTotalDerivation().Sanitize()
 }
 
 func encodeUsage(u domain.TokenUsage) wireUsage {

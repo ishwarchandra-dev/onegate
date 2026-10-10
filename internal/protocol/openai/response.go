@@ -170,7 +170,7 @@ func DecodeUsage(w *wireUsage) domain.TokenUsage {
 	if w.CompletionDetails != nil {
 		u.ReasoningTokens = w.CompletionDetails.ReasoningTokens
 	}
-	return u
+	return u.Sanitize()
 }
 
 func encodeUsagePtr(u domain.TokenUsage) *wireUsage {

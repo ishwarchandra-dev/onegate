@@ -227,6 +227,33 @@ func (u TokenUsage) WithTotalDerivation() TokenUsage {
 	return u
 }
 
+// Sanitize clamps negative token counts to zero. No legitimate provider
+// reports negative usage; a hostile or buggy upstream could otherwise
+// deflate spend accounting and corrupt usage rollups (found by the
+// p8.fuzzing campaign). Parity-neutral: the replay corpus contains no
+// negative token counts.
+func (u TokenUsage) Sanitize() TokenUsage {
+	if u.InputTokens < 0 {
+		u.InputTokens = 0
+	}
+	if u.OutputTokens < 0 {
+		u.OutputTokens = 0
+	}
+	if u.TotalTokens < 0 {
+		u.TotalTokens = 0
+	}
+	if u.CacheReadTokens < 0 {
+		u.CacheReadTokens = 0
+	}
+	if u.CacheWriteTokens < 0 {
+		u.CacheWriteTokens = 0
+	}
+	if u.ReasoningTokens < 0 {
+		u.ReasoningTokens = 0
+	}
+	return u
+}
+
 // ---------------------------------------------------------------------------
 // Finish reasons and responses
 // ---------------------------------------------------------------------------

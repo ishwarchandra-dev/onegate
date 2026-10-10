@@ -21,10 +21,13 @@ type Frame struct {
 }
 
 // SplitFrames parses an SSE body into frames, dropping keep-alive
-// comments. It is deliberately forgiving: CRLF is normalized, stray
-// partial blocks at EOF are ignored.
+// comments. It is deliberately forgiving: per the WHATWG SSE spec CR,
+// LF, and CRLF are all line terminators, so all three are normalized
+// before splitting (found by FuzzSplitFrames: lone-CR bodies previously
+// leaked "\r" into frame data); stray partial blocks at EOF are ignored.
 func SplitFrames(body []byte) []Frame {
 	text := strings.ReplaceAll(string(body), "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
 	var frames []Frame
 	var event, data strings.Builder
 	inBlock := false

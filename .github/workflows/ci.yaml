@@ -40,6 +40,19 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
+  fuzz:
+    name: Fuzz smoke (10s per target)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Short fuzz bursts across all targets
+        run: scripts/fuzz_smoke.sh 10s
+
   web:
     name: Dashboard build
     runs-on: ubuntu-latest

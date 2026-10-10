@@ -81,12 +81,18 @@ nodes:
   - id: p8.fuzzing
     title: "Fuzzing: protocol parsers + SSE framing + config parsing"
     owner: qa-engineer
-    status: pending
+    status: done
     depends_on: [p7.gate]
     deliverables:
       - "Go native fuzz targets with seeded corpora committed"
     acceptance:
       - "Fuzz clean for sustained CI runs; crashes become fixtures + fixes"
+    evidence:
+      - "15 Go native fuzz targets with committed seed corpora: sse framing, openai/anthropic/gemini (request, response, error envelope, stream state machines), config strict-parse+merge+validate, importer parse->plan->report integration"
+      - "Local campaign: sse 45s/2.58M execs + all other targets 20-60s bursts — clean; scripts/fuzz_smoke.sh (CI, 10s/target) + scripts/fuzz_campaign.sh (sustained local, default 300s/target)"
+      - "F-1 FIXED: lone-CR line endings leaked \r into SSE frame data (WHATWG allows CR/LF/CRLF) — parser normalizes all three; minimized crasher committed as corpus fixture + 3 named regression tests"
+      - "F-2 FIXED: negative token counts accepted from hostile upstream usage (spend/rollup corruption risk) — domain.TokenUsage.Sanitize() clamps at zero, wired into all three adapters; parity replay re-run 41/41 proves neutrality"
+      - "CI: new fuzz job (15x10s smoke); seed corpora run as unit tests in the go job so committed crashers fail CI until fixed"
 
   - id: p8.perf-fixes
     title: "Optimization cycle from load/chaos findings (profile-driven only)"

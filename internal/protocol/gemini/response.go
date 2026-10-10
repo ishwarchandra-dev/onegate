@@ -158,7 +158,7 @@ func DecodeUsage(w *wireUsageMetadata) domain.TokenUsage {
 		TotalTokens:     w.TotalTokenCount,
 		CacheReadTokens: w.CachedContentTokenCount,
 		ReasoningTokens: w.ThoughtsTokenCount,
-	}.WithTotalDerivation()
+	}.WithTotalDerivation().Sanitize()
 }
 
 func encodeUsagePtr(u domain.TokenUsage) *wireUsageMetadata {
