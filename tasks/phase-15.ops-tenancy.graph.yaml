@@ -1,0 +1,88 @@
+# OneGate task graph — Phase 15: Ops & Multi-tenancy
+phase: 15
+name: ops-tenancy
+title: "Phase 15 — Remote mode, CLI cockpit, audit log, alerting, teams/projects (RBAC-lite)"
+status: pending
+gate:
+  - "Scoped API tokens (read/write/admin) with expiry + revocation"
+  - "CLI cockpit: models/providers/keys/usage/logs + test + configure"
+  - "Audit log: every mutation captured, immutable, filterable UI"
+  - "Alert rules on rollups with webhook channel + history page"
+  - "Teams + projects with keys/usage rollup (RBAC-lite)"
+  - "v2.0.0 release checklist green"
+
+nodes:
+  - id: p15.remote
+    title: "Remote mode: scoped tokens"
+    owner: security-engineer
+    status: pending
+    depends_on: [p14.gate]
+    deliverables:
+      - "Scoped API tokens (read/write/admin) with expiry + revocation, minted from dashboard"
+      - "CLI --host flag targeting any instance"
+    acceptance:
+      - "Scope enforcement tested per endpoint class; expired tokens rejected"
+
+  - id: p15.cli
+    title: "CLI cockpit"
+    owner: go-engineer
+    status: pending
+    depends_on: [p15.remote]
+    deliverables:
+      - "onegate models|providers|keys|usage|logs (JSON + table output)"
+      - "onegate test <model> smoke command; onegate configure <tool> (Claude Code, Codex, Cursor, OpenCode)"
+    acceptance:
+      - "configure output verified for each tool; docs/cli.md regenerated + checked"
+
+  - id: p15.audit
+    title: "Audit log"
+    owner: storage-engineer
+    status: pending
+    depends_on: [p14.gate]
+    deliverables:
+      - "Immutable append-only audit table: actor, action, entity, before->after, trace context"
+      - "Dashboard page with filters"
+    acceptance:
+      - "Every management mutation writes an audit row (middleware-enforced, tested)"
+
+  - id: p15.alerting
+    title: "Alerting: rules + channels + history"
+    owner: observability-engineer
+    status: pending
+    depends_on: [p14.gate]
+    deliverables:
+      - "Rules on rollups: error rate, p95 latency, spend, quota; eval loop off the hot path"
+      - "Channels: webhook (reuses p14 delivery infra); alert history page"
+    acceptance:
+      - "Burst scenario triggers rule -> delivery recorded; no rule evaluation on proxy path"
+
+  - id: p15.tenancy
+    title: "Teams + projects (RBAC-lite)"
+    owner: go-engineer
+    status: pending
+    depends_on: [p15.audit]
+    deliverables:
+      - "Teams + projects entities; keys belong to projects; usage/cost rollup per project"
+      - "Dashboard governance views (teams, projects, per-project spend)"
+    acceptance:
+      - "Full RBAC/SSO explicitly out of scope (single-binary charter); roles limited to admin/member"
+
+  - id: p15.release
+    title: "v2.0.0 release"
+    owner: release-manager
+    status: pending
+    depends_on: [p15.cli, p15.alerting, p15.tenancy]
+    deliverables:
+      - "CHANGELOG v2.0.0; upgrading guide; release matrix + Docker + npx smoke re-run"
+    acceptance:
+      - "Multi-tenant e2e demo: 2 teams, 3 keys, project quota, alert fires on burst; audit log complete"
+
+  - id: p15.gate
+    title: "Phase 15 gate: v2 accepted"
+    owner: code-reviewer
+    status: pending
+    depends_on: [p15.release]
+    deliverables:
+      - "docs/gates/phase-15.md with verdict; roadmap-v2 status updated"
+    acceptance:
+      - "v2.0.0 tagged; all gates PASS; graph --check green; GRAPH COMPLETE 100%+v2"

@@ -1,0 +1,90 @@
+# OneGate task graph — Phase 11: Routing Intelligence
+phase: 11
+name: routing-intelligence
+title: "Phase 11 — Auto-combo scoring, strategy suite, decision transparency, admission control"
+status: pending
+gate:
+  - "auto model ID resolves via live scoring across candidate targets"
+  - "Strategy suite: round-robin, p2c, least-used, cost-optimized, headroom, reset-aware, cache-optimized"
+  - "X-OneGate-Decision header on 100% of proxied responses + /v1/routing/candidates endpoint"
+  - "Per-request overrides (strategy pin, budget cap) behind admin allow-list"
+  - "Adaptive admission: bounded queue under overload instead of 429/503 cliff"
+
+nodes:
+  - id: p11.scoring
+    title: "Auto-combo engine: live target scoring"
+    owner: routing-specialist
+    status: pending
+    depends_on: [p10.gate]
+    deliverables:
+      - "internal/routing/scoring.go: factor set (health, cost, latency, error rate, quota headroom, session affinity) scored per request"
+      - "Model ID 'auto' (+ auto/fast, auto/cheap variants) resolved at request time"
+    acceptance:
+      - "Scoring is a pure function on an immutable target snapshot; table-driven tests"
+      - "Zero allocations on the scoring fast path (bench-verified)"
+
+  - id: p11.strategies
+    title: "Strategy suite expansion (7 new policies)"
+    owner: routing-specialist
+    status: pending
+    depends_on: [p11.scoring]
+    deliverables:
+      - "round-robin, p2c, least-used, cost-optimized, headroom, reset-aware, cache-optimized as policy plugins"
+    acceptance:
+      - "Each policy: unit tests + property test (never returns unhealthy target unless all are)"
+      - "p13.cache lands before cache-optimized is marked done (stub allowed earlier)"
+
+  - id: p11.transparency
+    title: "Decision transparency: header + candidates endpoint"
+    owner: go-engineer
+    status: pending
+    depends_on: [p11.scoring]
+    deliverables:
+      - "X-OneGate-Decision header: strategy, provider, model, attempts, latency"
+      - "GET /v1/routing/candidates/{model}: live candidate pool with factor scores"
+    acceptance:
+      - "Header present on every proxied response (buffered + stream)"
+      - "Request-detail drawer (p10.logs) surfaces the decision"
+
+  - id: p11.overrides
+    title: "Per-request overrides with admin allow-list"
+    owner: api-designer
+    status: pending
+    depends_on: [p11.scoring]
+    deliverables:
+      - "Headers: X-OneGate-Strategy, X-OneGate-Budget-Usd; allow-list in system config"
+      - "Denied override -> standard request (logged), never an error"
+    acceptance:
+      - "Allow-list default-off; audit log records accepted overrides"
+
+  - id: p11.admission
+    title: "Adaptive admission + rolling RPM leases"
+    owner: rate-limit-specialist
+    status: pending
+    depends_on: [p11.scoring]
+    deliverables:
+      - "Bounded wait queue for heavyweight requests under load (configurable cap + timeout)"
+      - "Atomic rolling-window RPM leases per key (lock-free)"
+    acceptance:
+      - "Burst load test: queued requests complete or time out gracefully; no unbounded memory"
+      - "p99 admission decision < 100us (bench in CI)"
+
+  - id: p11.chaos
+    title: "Chaos validation: auto-combo convergence"
+    owner: chaos-engineer
+    status: pending
+    depends_on: [p11.strategies, p11.admission]
+    deliverables:
+      - "Scenario: kill primary mid-stream -> combo converges to healthy target within 1 request"
+    acceptance:
+      - "Existing chaos harness extended; convergence time measured and reported"
+
+  - id: p11.gate
+    title: "Phase 11 gate: routing intelligence accepted"
+    owner: code-reviewer
+    status: pending
+    depends_on: [p11.chaos, p11.transparency, p11.overrides]
+    deliverables:
+      - "docs/gates/phase-11.md with verdict"
+    acceptance:
+      - "Decision header on 100% of responses (e2e-asserted); strategy parity tests green; graph --check green"

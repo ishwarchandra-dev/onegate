@@ -20,13 +20,19 @@ npx onegate          # or: ./onegate serve (CLI reference: docs/cli.md)
 
 ## Status
 
-Phase 0 (scaffold) — see the live board:
+**v1.0.0 shipped** — 10 phases, 86/86 nodes done (see the gate reports in
+[`docs/gates/`](docs/gates/)). Live board:
 
 ```bash
 make graph          # or: python3 scripts/graph_status.py
 ```
 
-Roadmap: [`docs/roadmap.md`](docs/roadmap.md) · Phases 0–9, ~25 weeks.
+**v2 in planning** — phases 10–15 appended: Dashboard 2.0 (Bifrost-class),
+routing intelligence, provider ecosystem, token efficiency, integrations &
+safety, ops & multi-tenancy. Plan: [`docs/roadmap-v2.md`](docs/roadmap-v2.md) ·
+gap audit: [`docs/research/v2-competitive-analysis.md`](docs/research/v2-competitive-analysis.md).
+
+Roadmap: [`docs/roadmap.md`](docs/roadmap.md) · v1 phases 0–9 done; v2 phases 10–15 pending.
 
 ## Quick start (development)
 

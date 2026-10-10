@@ -4,6 +4,13 @@ Ten phases, graph-gated. Every phase ends with a `p{N}.gate` node; the next
 phase's nodes depend on it. The live source of truth is `tasks/*.graph.yaml`
 — this page is the human summary.
 
+> **v2 appended (2026-10-11):** phases 10–15 now extend this roadmap —
+> Dashboard 2.0 (Bifrost-class), routing intelligence, provider ecosystem,
+> token efficiency, integrations & safety, ops & multi-tenancy. See
+> [`roadmap-v2.md`](roadmap-v2.md) and the gap audit in
+> [`research/v2-competitive-analysis.md`](research/v2-competitive-analysis.md).
+> Board: `python3 scripts/graph_status.py` (v1: 86/86 done; v2: 41 nodes pending).
+
 | Phase | Name | Focus | Rough window |
 |-------|------|-------|--------------|
 | 0 | Scaffold | Repo, CI, agents, task graphs, docs | Week 1 |

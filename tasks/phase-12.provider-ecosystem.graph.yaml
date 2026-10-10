@@ -1,0 +1,79 @@
+# OneGate task graph — Phase 12: Provider Ecosystem
+phase: 12
+name: provider-ecosystem
+title: "Phase 12 — Provider catalog, embeddings, media endpoints, OAuth providers, Batch API"
+status: pending
+gate:
+  - "Built-in versioned catalog of 30-50 providers consumed by the dashboard"
+  - "/v1/embeddings live across >= 2 providers with per-key accounting"
+  - "Media endpoints: images, audio transcriptions/translations, speech"
+  - "OAuth (PKCE) account linking for subscription providers"
+  - "OpenAI-compatible Batch + Files APIs with bounded worker pool"
+
+nodes:
+  - id: p12.catalog
+    title: "Provider catalog: seeded, versioned, dashboard-integrated"
+    owner: research-analyst
+    status: pending
+    depends_on: [p10.gate]
+    deliverables:
+      - "internal/catalog/catalog.json (versioned): 30-50 providers with wire profile, base URL, models, pricing, capability flags"
+      - "Catalog embedded via go:embed; refresh command + import path"
+      - "Dashboard 'add from catalog' flow (3 clicks max: pick -> key -> save)"
+    acceptance:
+      - "Catalog data reviewed against live provider docs; free-tier flags marked"
+      - "Custom providers remain first-class alongside catalog entries"
+
+  - id: p12.embeddings
+    title: "Embeddings endpoint (/v1/embeddings)"
+    owner: protocol-engineer
+    status: pending
+    depends_on: [p10.gate]
+    deliverables:
+      - "OpenAI-shaped embeddings across providers; usage accounting per key"
+    acceptance:
+      - "Verified against 2 real providers; parity corpus case added"
+
+  - id: p12.media
+    title: "Media endpoints: images + audio"
+    owner: protocol-engineer
+    status: pending
+    depends_on: [p10.gate]
+    deliverables:
+      - "/v1/images/generations; /v1/audio/transcriptions, /v1/audio/translations, /v1/audio/speech"
+      - "Per-modality capability flags on models (dashboard editor)"
+    acceptance:
+      - "One media path verified against a real provider; unsupported -> clean 400"
+
+  - id: p12.oauth
+    title: "OAuth 2.0 (PKCE) provider linking"
+    owner: security-engineer
+    status: pending
+    depends_on: [p12.catalog]
+    deliverables:
+      - "OAuth flows for subscription providers (Claude/ChatGPT/Gemini coding plans)"
+      - "Encrypted token storage + refresh; dashboard account-linking UX"
+    acceptance:
+      - "Tokens encrypted at rest; refresh failure degrades provider gracefully (health down, no crash)"
+      - "Threat-model addendum covering OAuth token handling"
+
+  - id: p12.batch
+    title: "Batch + Files APIs"
+    owner: go-engineer
+    status: pending
+    depends_on: [p12.embeddings]
+    deliverables:
+      - "/v1/batches + /v1/files: background execution, bounded worker pool, per-key quota accounting"
+    acceptance:
+      - "Batch round-trip test (submit -> process -> fetch results); no unbounded goroutines"
+      - "Crash recovery: interrupted batch resumes or fails cleanly on restart"
+
+  - id: p12.gate
+    title: "Phase 12 gate: provider ecosystem accepted"
+    owner: code-reviewer
+    status: pending
+    depends_on: [p12.catalog, p12.media, p12.oauth, p12.batch]
+    deliverables:
+      - "docs/gates/phase-12.md with verdict"
+    acceptance:
+      - "Catalog add in <= 3 clicks (e2e); embeddings + one media endpoint live; batch round-trip green; graph --check green"

@@ -1,0 +1,66 @@
+# OneGate task graph — Phase 13: Token Efficiency
+phase: 13
+name: token-efficiency
+title: "Phase 13 — Semantic response cache, compression pipeline, cache-affinity routing"
+status: pending
+gate:
+  - "Response cache: exact-match tier + optional semantic tier, hit-rate chart"
+  - "Compression pipeline: lite, prose, tool-output, aggressive engines with preservation guarantees"
+  - "Cache-affinity routing strategy active"
+  - "Fidelity suite: zero mutation of code blocks/URLs/JSON; savings reported"
+
+nodes:
+  - id: p13.cache-exact
+    title: "Response cache: exact-match tier"
+    owner: go-engineer
+    status: pending
+    depends_on: [p11.gate]
+    deliverables:
+      - "internal/cache: keyed on (model, canonical request hash); TTL; per-key opt-out"
+      - "X-OneGate-Cache: HIT|MISS header; hit-rate metric + dashboard chart"
+    acceptance:
+      - "Stream + buffered responses cached correctly; invalidation on model/target change"
+      - "No cache I/O on the hot path after lookup (async write-behind)"
+
+  - id: p13.cache-semantic
+    title: "Response cache: semantic tier (optional)"
+    owner: go-engineer
+    status: pending
+    depends_on: [p13.cache-exact, p12.embeddings]
+    deliverables:
+      - "Embedding-similarity match above configurable threshold (in-process vectors, no external vector DB)"
+    acceptance:
+      - "Similarity threshold configurable per model; default off; audit of matched pairs logged"
+
+  - id: p13.compression
+    title: "Compression pipeline (pluggable engines)"
+    owner: go-engineer
+    status: pending
+    depends_on: [p11.gate]
+    deliverables:
+      - "internal/compress: engine interface + lite, prose, tool-output, aggressive engines"
+      - "Preservation engine: code blocks/URLs/JSON pass byte-perfect (structural guard)"
+      - "Per-model presets; per-request X-OneGate-Compression override; applied plan echoed in response header"
+    acceptance:
+      - "Fidelity suite on pinned corpus: zero code-block mutation; savings % measured per engine"
+      - "Engines run off the hot path where possible; latency budget enforced (p95 overhead < X ms, set in gate doc)"
+
+  - id: p13.affinity
+    title: "Cache-affinity routing"
+    owner: routing-specialist
+    status: pending
+    depends_on: [p13.cache-exact, p11.strategies]
+    deliverables:
+      - "cache-optimized strategy: pin repeat prompt prefixes to the target holding the cache"
+    acceptance:
+      - "Replayed workload benchmark: hit-rate >= 30% with affinity on vs off"
+
+  - id: p13.gate
+    title: "Phase 13 gate: token efficiency accepted"
+    owner: code-reviewer
+    status: pending
+    depends_on: [p13.compression, p13.affinity, p13.cache-semantic]
+    deliverables:
+      - "docs/gates/phase-13.md with verdict + measured savings table"
+    acceptance:
+      - "Fidelity + savings numbers reported; latency budget held; graph --check green"

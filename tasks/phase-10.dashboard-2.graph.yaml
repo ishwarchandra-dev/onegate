@@ -1,0 +1,153 @@
+# OneGate task graph — Phase 10: Dashboard 2.0
+phase: 10
+name: dashboard-2
+title: "Phase 10 — Bifrost-class Dashboard (shell, primitives, live observability, playground)"
+status: pending
+gate:
+  - "40+ shadcn primitives in web/app/components/ui with stories/examples"
+  - "App shell: grouped collapsible sidebar + command palette + toasts + dark/light"
+  - "Overview, Providers, Routing, Keys, Logs, Playground, Settings pages rebuilt to Bifrost UX bar"
+  - "Live log tail with faceted filters + request-detail drawer with timing waterfall"
+  - "Playground exercises the real proxy path with a virtual key"
+  - "Playwright journeys cover every page; embedded bundle < 2 MB gzipped total"
+
+nodes:
+  - id: p10.design-system
+    title: "Design system: expand shadcn primitive base (~40 components)"
+    owner: design-engineer
+    status: pending
+    depends_on: [p9.gate]
+    deliverables:
+      - "web/app/components/ui/: sidebar, command, data-table, sheet, combobox, tree, tabs, toast, tooltip, popover, date-picker, scroll-area, progress, form suite, chart suite + existing 9"
+      - "Theme tokens for dark/light verified; RTL carried over"
+    acceptance:
+      - "Every primitive renders in isolation; a11y attributes follow radix defaults"
+      - "No primitive pulls a runtime dependency beyond radix-ui + tailwind + cva"
+
+  - id: p10.shell
+    title: "App shell: sidebar + command palette + global UX patterns"
+    owner: frontend-engineer
+    status: pending
+    depends_on: [p10.design-system]
+    deliverables:
+      - "Collapsible grouped sidebar (Overview, Traffic, Access, Integrations, Config)"
+      - "Command palette (Cmd+K): navigate, create provider/model/key, toggle theme"
+      - "Toast feedback on every mutation; breadcrumbs; session menu"
+    acceptance:
+      - "Keyboard-only navigation works across the whole shell"
+      - "Palette actions mutate via existing API client (no new endpoints)"
+
+  - id: p10.api-support
+    title: "Management API additions powering Dashboard 2.0"
+    owner: api-designer
+    status: pending
+    depends_on: [p9.gate]
+    deliverables:
+      - "GET /api/requests/{id} — full request record: timing waterfall, attempts, bodies (redacted)"
+      - "GET /api/usage/timeseries — bucketed rollups for charts (range, granularity)"
+      - "GET /api/routing/candidates/{model} — live target snapshot with health/latency"
+      - "POST /api/playground/session — mint short-lived scoped key for the playground"
+    acceptance:
+      - "OpenAPI updated + TS client regenerated; api-check green"
+      - "Request bodies redacted per existing secrets policy"
+
+  - id: p10.overview
+    title: "Overview page: KPI cards + live charts"
+    owner: frontend-engineer
+    status: pending
+    depends_on: [p10.shell, p10.api-support]
+    deliverables:
+      - "KPI cards: requests, error rate, p50/p95 latency, spend, active keys"
+      - "Charts: request volume, per-model usage, per-provider throughput; time-range picker"
+    acceptance:
+      - "Charts fed by rollup tables (no proxy-path queries); updates ≤ 5 s behind"
+
+  - id: p10.providers
+    title: "Providers page: cards, live health, inline test"
+    owner: frontend-engineer
+    status: pending
+    depends_on: [p10.shell, p10.api-support]
+    deliverables:
+      - "Provider cards: protocol, masked key, live health badge, latency sparkline"
+      - "Inline test-connection with request/response preview"
+    acceptance:
+      - "Create/edit via sheet (not modal); test result surfaces upstream error verbatim"
+
+  - id: p10.routing
+    title: "Routing page: chain tree editor"
+    owner: frontend-engineer
+    status: pending
+    depends_on: [p10.shell, p10.api-support]
+    deliverables:
+      - "Tree view: model -> targets; drag-to-reorder; per-target weight/position editor"
+      - "Health overlay per target; candidates preview panel"
+    acceptance:
+      - "Reorder persists position atomically (no partial chains)"
+      - "Capabilities matrix editor with validation"
+
+  - id: p10.keys
+    title: "Keys page: budget progress, usage drill-down, rotate"
+    owner: frontend-engineer
+    status: pending
+    depends_on: [p10.shell, p10.api-support]
+    deliverables:
+      - "Key table: budget progress bars (rpm/tpm/spend), status chips, row actions"
+      - "Usage drill-down per key; revoke + rotate flows; copy-once reveal"
+    acceptance:
+      - "Raw key shown exactly once at creation/rotation"
+
+  - id: p10.logs
+    title: "Logs page: live tail + request-detail drawer"
+    owner: frontend-engineer
+    status: pending
+    depends_on: [p10.shell, p10.api-support]
+    deliverables:
+      - "Live tail over existing SSE feed upgraded: pause/resume, faceted filters (model/provider/key/status/duration)"
+      - "Request-detail drawer: timing waterfall, attempt chain, redacted bodies, trace-ID copy"
+    acceptance:
+      - "Drawer renders waterfall from /api/requests/{id} attempt records"
+      - "Facets compose (AND) and persist in URL params"
+
+  - id: p10.playground
+    title: "Playground: chat try-it against the real proxy path"
+    owner: frontend-engineer
+    status: pending
+    depends_on: [p10.shell, p10.api-support]
+    deliverables:
+      - "Model picker (scope-respecting), message composer, streaming preview"
+      - "Raw JSON toggle; uses playground session key; usage cost shown per turn"
+    acceptance:
+      - "Requests traverse /v1/chat/completions like any client (no dashboard shortcut)"
+      - "Streaming renders progressively; errors render in protocol envelope"
+
+  - id: p10.settings
+    title: "Settings page redesign"
+    owner: frontend-engineer
+    status: pending
+    depends_on: [p10.shell]
+    deliverables:
+      - "Config viewer/editor with validation feedback; session management"
+      - "Dangerous zone: import/export, data-dir info"
+    acceptance:
+      - "Invalid config never saves; server rejects are surfaced verbatim"
+
+  - id: p10.e2e
+    title: "E2E suite: journeys for every Dashboard 2.0 page"
+    owner: qa-engineer
+    status: pending
+    depends_on: [p10.overview, p10.providers, p10.routing, p10.keys, p10.logs, p10.playground, p10.settings]
+    deliverables:
+      - "Playwright journeys: overview, provider CRUD+test, chain reorder, key rotate, log facets + drawer, playground round-trip, settings validation"
+    acceptance:
+      - "All journeys green against embedded artifact; a11y scan (axe) on core pages passes critical rules"
+
+  - id: p10.gate
+    title: "Phase 10 gate: Dashboard 2.0 accepted"
+    owner: code-reviewer
+    status: pending
+    depends_on: [p10.e2e]
+    deliverables:
+      - "docs/gates/phase-10.md with verdict + screenshot comparison vs Bifrost reference"
+    acceptance:
+      - "Bundle < 2 MB gzipped total embedded; Lighthouse a11y >= 90 on core pages"
+      - "All journeys green; graph --check green"

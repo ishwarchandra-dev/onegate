@@ -1,0 +1,56 @@
+# OneGate task graph — Phase 14: Integrations & Safety
+phase: 14
+name: integrations-safety
+title: "Phase 14 — MCP server, webhooks, guardrails"
+status: pending
+gate:
+  - "MCP server (stdio + HTTP streamable) with ~25 management tools, scoped auth, audit trail"
+  - "Signed webhooks with retry/backoff + delivery log and replay UI"
+  - "Guardrails: prompt-injection scanner + credential masking, opt-in per model/key"
+
+nodes:
+  - id: p14.mcp
+    title: "MCP server: gateway management as tools"
+    owner: api-designer
+    status: pending
+    depends_on: [p12.gate]
+    deliverables:
+      - "internal/mcp: stdio + HTTP streamable transports; tool schema generated from OpenAPI where possible"
+      - "~25 tools: providers CRUD, models, keys, usage queries, routing health, candidates"
+      - "Scoped auth (admin token or scoped session); every tool call audited"
+    acceptance:
+      - "An MCP client (Claude Code) drives a real provider change end-to-end"
+      - "Tool list + schemas tested against MCP spec conformance suite"
+
+  - id: p14.webhooks
+    title: "Webhooks: events, delivery, replay"
+    owner: go-engineer
+    status: pending
+    depends_on: [p12.gate]
+    deliverables:
+      - "Events: request.completed, quota.exceeded, key.revoked, provider.unhealthy"
+      - "HMAC-signed payloads; bounded retry with backoff; delivery log + replay UI"
+    acceptance:
+      - "Delivery + retry + replay verified in e2e; secrets never in payloads"
+
+  - id: p14.guardrails
+    title: "Guardrails: injection scanner + credential masking"
+    owner: security-engineer
+    status: pending
+    depends_on: [p12.gate]
+    deliverables:
+      - "Opt-in prompt-injection heuristic scanner (per model/key), verdict logged, configurable action (log|block)"
+      - "Credential masking: redact API-key-shaped strings in both directions"
+    acceptance:
+      - "Red-team corpus: known injection patterns detected (target recall documented); zero false blocks on clean corpus"
+      - "Bypass scopes for admin keys; threat-model updated"
+
+  - id: p14.gate
+    title: "Phase 14 gate: integrations & safety accepted"
+    owner: code-reviewer
+    status: pending
+    depends_on: [p14.mcp, p14.webhooks, p14.guardrails]
+    deliverables:
+      - "docs/gates/phase-14.md with verdict"
+    acceptance:
+      - "MCP e2e green; webhook replay green; guardrail corpus results recorded; graph --check green"
