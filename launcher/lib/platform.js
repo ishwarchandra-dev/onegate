@@ -12,12 +12,19 @@
 //             accepted by lib/checksums.js).
 //
 // Extraction uses the system `tar`: GNU tar on Linux reads .tar.gz; bsdtar
-// (macOS, Windows 10 1803+) reads .tar.gz AND .zip. One tool, all six
-// targets — zero npm dependencies.
+// (macOS, Windows 10 1803+ System32) reads .tar.gz AND .zip. One tool,
+// all six targets — zero npm dependencies.
+//
+// On windows, `tar` on PATH may resolve to git-bash's GNU tar (cannot
+// read zip); tarBinary() prefers the OS-shipped bsdtar in System32
+// explicitly — found by the windows npx smoke on v1.0.0 ("This does
+// not look like a tar archive" on a .zip).
 
 "use strict"
 
 const { execFile } = require("child_process")
+const fs = require("fs")
+const path = require("path")
 
 // MATRIX is the single source of truth for supported combinations; the
 // error message and the tests both derive from it.
@@ -106,7 +113,7 @@ function extractArchive(archive, member, dir) {
   const relArchive = archive.split(/[\\/]/).pop()
   const relMember = member.split(/[\\/]/).pop()
   return new Promise((resolvePromise, reject) => {
-    execFile("tar", ["-xf", relArchive, "-C", ".", relMember], { cwd: dir }, (err) => {
+    execFile(tarBinary(), ["-xf", relArchive, "-C", ".", relMember], { cwd: dir }, (err) => {
       if (err) {
         const e = new Error(`tar -xf failed: ${err.message}`)
         e.name = "ExtractError"
@@ -117,6 +124,15 @@ function extractArchive(archive, member, dir) {
       resolvePromise()
     })
   })
+}
+
+// tarBinary returns the tar to invoke: System32's bsdtar on windows
+// (PATH `tar` there may be git's GNU tar, which cannot read zip),
+// plain `tar` everywhere else.
+function tarBinary() {
+  if (process.platform !== "win32") return "tar"
+  const sys = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe")
+  return fs.existsSync(sys) ? sys : "tar"
 }
 
 module.exports = {
