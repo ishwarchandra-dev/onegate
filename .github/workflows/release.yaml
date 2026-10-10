@@ -180,8 +180,15 @@ jobs:
             fi
             sleep 0.2
           done
-          kill "$pid" 2>/dev/null || true # best-effort; the runner reaps the tree
-          rm -rf "$dir"
+          # tree-kill so the gateway actually stops (git-bash `kill` leaves
+          # onegate.exe holding the sqlite files; rm -rf then fails under
+          # set -e — found by the windows npx smoke)
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            taskkill //F //T //PID "$pid" 2>/dev/null || true
+          else
+            kill "$pid" 2>/dev/null || true
+          fi
+          rm -rf "$dir" 2>/dev/null || true # best-effort
           if [[ "$ok" != "1" ]]; then
             echo "npx runtime smoke FAILED on ${{ matrix.label }}" >&2
             exit 1
