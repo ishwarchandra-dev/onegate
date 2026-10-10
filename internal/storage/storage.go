@@ -22,6 +22,12 @@ import (
 // Store wraps the SQLite database handle.
 type Store struct {
 	db *sql.DB
+
+	// vkeys is the persistent VirtualKeyRepo. Unlike the other repos
+	// (constructed per call, stateless), it carries the change hook the
+	// auth Verifier registers (p8.perf-fixes) — so it must be instance-
+	// stable for the lifetime of the Store.
+	vkeys *VirtualKeyRepo
 }
 
 // Open opens (creating if needed) the database at path and applies pragmas.
@@ -46,7 +52,9 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("storage: ping: %w", err)
 	}
-	return &Store{db: db}, nil
+	s := &Store{db: db}
+	s.vkeys = &VirtualKeyRepo{s: s}
+	return s, nil
 }
 
 // OpenTemp opens a throwaway database in the system temp dir. Tests use

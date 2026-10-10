@@ -97,12 +97,17 @@ nodes:
   - id: p8.perf-fixes
     title: "Optimization cycle from load/chaos findings (profile-driven only)"
     owner: performance-engineer
-    status: pending
+    status: done
     depends_on: [p8.load-soak, p8.load-burst, p8.chaos-catalog]
     deliverables:
       - "Optimizations each with before/after benchmark tables"
     acceptance:
       - "No correctness trades; all benchmarks re-run 3x"
+    evidence:
+      - "New full-composition hot-path benchmark (cmd/onegate/hotpath_bench_test.go): non-stream/stream/parallel through production wiring (auth, quota, routing, fallback, translation, usage pipeline, metrics)"
+      - "Profile-driven fixes only: P-1 verified-key cache backed by storage change-hook (Verifier.Verify was 15.9% CPU — revocation/scopes/limits/expiry/delete each proven immediate via 5 new tests); P-2 last-used touch coalescing (1 goroutine+write per request -> <=1/s per key); P-3 quotaProxy trace map mutex -> sync.Map"
+      - "Before/after (median of 3 runs, all runs in docs/reports/perf-fixes.md): NonStream 226us->105us (-53.5%), Stream 356us->156us (-56.3%), Parallel 155us->87us (-43.8%); allocs/op -13..-16%; docs/reports/perf-fixes.md"
+      - "No correctness trades: parity replay 41/41 after changes, full -race suite green, no timeout/cap/error path touched; non-actions documented (net/http internals, background batch writer by design)"
 
   - id: p8.gate
     title: "Phase 8 gate"

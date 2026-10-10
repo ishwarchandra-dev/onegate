@@ -156,13 +156,17 @@ func (r *routingResolver) ResolveTargets(ctx context.Context, call ingest.Call) 
 // quotaProxy wraps the engine with quota enforcement: the gate renders
 // 429 + Retry-After before any upstream work; actual usage debits after
 // completion. In-flight keys are kept trace-ID-keyed for the debit.
+//
+// p8.perf-fixes: the trace->key map is a sync.Map — each request stores
+// and deletes its own unique key (disjoint-access pattern), so the fast
+// path runs lock-free instead of serializing every request through one
+// mutex.
 type quotaProxy struct {
 	engine  *fallback.Engine
 	quota   *ratelimit.QuotaManager
 	metrics *observability.Registry // may be nil (tests)
 
-	mu   sync.Mutex
-	keys map[string]domain.VirtualKey
+	keys sync.Map // traceID -> domain.VirtualKey
 }
 
 // newQuotaProxy builds the wrapper. engine and quota are required;
@@ -172,8 +176,7 @@ func newQuotaProxy(engine *fallback.Engine, quota *ratelimit.QuotaManager,
 	if engine == nil || quota == nil {
 		panic("onegate: quotaProxy requires an engine and a QuotaManager")
 	}
-	return &quotaProxy{engine: engine, quota: quota, metrics: metrics,
-		keys: map[string]domain.VirtualKey{}}
+	return &quotaProxy{engine: engine, quota: quota, metrics: metrics}
 }
 
 // Execute implements ingest.Proxy.
@@ -200,14 +203,8 @@ func (p *quotaProxy) Execute(ctx context.Context, w http.ResponseWriter, call in
 
 	traceID := observability.TraceID(ctx)
 	if traceID != "" {
-		p.mu.Lock()
-		p.keys[traceID] = call.Key
-		p.mu.Unlock()
-		defer func() {
-			p.mu.Lock()
-			delete(p.keys, traceID)
-			p.mu.Unlock()
-		}()
+		p.keys.Store(traceID, call.Key)
+		defer p.keys.Delete(traceID)
 	}
 
 	p.engine.Execute(ctx, w, call)
@@ -217,12 +214,11 @@ func (p *quotaProxy) Execute(ctx context.Context, w http.ResponseWriter, call in
 // Pricing follows the canonical model (ModelRequested) — same rule as the
 // usage pipeline's cost enrichment.
 func (p *quotaProxy) onUsage(ue fallback.UsageEvent) {
-	p.mu.Lock()
-	key, ok := p.keys[ue.CallID]
-	p.mu.Unlock()
+	val, ok := p.keys.Load(ue.CallID)
 	if !ok {
 		return
 	}
+	key, _ := val.(domain.VirtualKey)
 	mult := ue.CostMultiplier
 	if mult <= 0 {
 		mult = 100

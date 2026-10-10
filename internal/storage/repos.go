@@ -393,9 +393,40 @@ func scanRoutingRule(row rowScanner) (domain.RoutingRule, error) {
 
 // VirtualKeyRepo persists virtual keys. KeyHash holds the argon2id hash;
 // plaintext keys never reach storage.
-type VirtualKeyRepo struct{ s *Store }
+type VirtualKeyRepo struct {
+	s *Store
 
-func (s *Store) VirtualKeys() *VirtualKeyRepo { return &VirtualKeyRepo{s} }
+	// changeHook fires after every semantic mutation (create, status /
+	// scope / limit / meta update, delete) so in-process caches can drop
+	// their state. It deliberately never fires for TouchLastUsed (pure
+	// bookkeeping — firing would thrash the hot path). Set once during
+	// wiring, before traffic; the proxy-path Verifier is the consumer
+	// (p8.perf-fixes: revocation must apply to the very next request,
+	// which holds because every in-process mutation flows through here).
+	changeHook func()
+}
+
+// VirtualKeys returns the persistent VirtualKeyRepo (instance-stable:
+// the auth Verifier registers its change hook on it).
+func (s *Store) VirtualKeys() *VirtualKeyRepo {
+	if s.vkeys == nil {
+		// Stores built directly (tests) still get a working repo.
+		s.vkeys = &VirtualKeyRepo{s: s}
+	}
+	return s.vkeys
+}
+
+// SetChangeHook registers the post-mutation callback. Call once during
+// composition, before serving traffic; it is not synchronized for
+// concurrent mutation during runtime.
+func (r *VirtualKeyRepo) SetChangeHook(fn func()) { r.changeHook = fn }
+
+// notifyChange fires the hook if set. Called after a successful commit.
+func (r *VirtualKeyRepo) notifyChange() {
+	if r.changeHook != nil {
+		r.changeHook()
+	}
+}
 
 func (r *VirtualKeyRepo) Create(k domain.VirtualKey) (domain.VirtualKey, error) {
 	if k.ID == "" {
@@ -423,6 +454,7 @@ func (r *VirtualKeyRepo) Create(k domain.VirtualKey) (domain.VirtualKey, error) 
 	if err != nil {
 		return k, fmt.Errorf("storage: create vkey: %w", err)
 	}
+	r.notifyChange()
 	return k, nil
 }
 
@@ -447,6 +479,7 @@ func (r *VirtualKeyRepo) UpdateStatus(id string, status domain.KeyStatus) error 
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	r.notifyChange()
 	return nil
 }
 
@@ -482,6 +515,7 @@ func (r *VirtualKeyRepo) Delete(id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	r.notifyChange()
 	return nil
 }
 
@@ -497,6 +531,7 @@ func (r *VirtualKeyRepo) UpdateScopes(id string, scopes domain.KeyScopes) error 
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	r.notifyChange()
 	return nil
 }
 
@@ -512,6 +547,7 @@ func (r *VirtualKeyRepo) UpdateLimits(id string, limits domain.KeyLimits) error 
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	r.notifyChange()
 	return nil
 }
 
@@ -527,6 +563,7 @@ func (r *VirtualKeyRepo) UpdateMeta(id, name string, expiresMS int64) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	r.notifyChange()
 	return nil
 }
 
