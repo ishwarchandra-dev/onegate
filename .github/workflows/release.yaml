@@ -105,6 +105,12 @@ jobs:
     needs: [matrix, smoke-native]
     runs-on: ubuntu-latest
     steps:
+      # checkout is required for body_path: CHANGELOG.md — the publish
+      # job originally only downloaded the dist artifact, so the
+      # curated release notes were ENOENT and the body shipped empty
+      # (found by verifying the published v1.0.0 release)
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: release-dist

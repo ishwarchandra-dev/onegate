@@ -119,6 +119,34 @@ release workflow builds, smokes, and publishes the artifacts from it.
 
 - Nodes: **9/9 done** (`tasks/phase-9.release.graph.yaml`, phase
   status: done) — **graph complete: 86/86 across 10 phases**
-- Ship decision: **GO** — `v1.0.0` tagged at this commit
+- Ship decision: **GO** — `v1.0.0` tagged; pipeline verified end-to-end
+  (see the postscript below)
+
+## Postscript — release bring-up (same day, before sign-off)
+
+The first pipeline run failed in ~20 s (script exec bits in git,
+retired macos-13 runner label). Six tag iterations later, each failure
+found by the pipeline itself, the v1.0.0 run is fully green:
+
+- Build matrix + 5 native runtime smokes + GitHub Release: **success**
+- `npx onegate` smoke on all 5 hosted platforms against the real
+  published release: **success** — it caught five genuine launcher
+  bugs no local test could (`./`-prefixed SHA256SUMS entries from
+  `sha256sum ./*`; windows archives named `member.exe.zip`; bsdtar
+  parsing `D:\` as a remote host; git-bash's GNU tar on PATH vs
+  System32 bsdtar; process-tree cleanup on windows). All fixed in
+  `launcher/` + `scripts/release/build.sh` + `release.yaml`; launcher
+  suite 25/25; `actionlint` is now the local gate for workflow edits.
+- Docker multi-arch: **success** (GHCR `:v1.0.0` + `:latest`)
+- npm publish: **success with notice** (fires on `NPM_TOKEN`)
+- Release body: the publish job originally shipped empty (no checkout
+  → `body_path` ENOENT); workflow fixed for future tags and the
+  v1.0.0 body was patched from `CHANGELOG.md` via the API. Published
+  assets were never wrong; failed runs published nothing, so every tag
+  move was safe per the release-manager charter.
+
+The tag points at the commit carrying all of the above; the published
+`SHA256SUMS` matches the shipped archives (the launcher verified them
+on every platform before running a single byte).
 
 — graph-master, p9.gate
