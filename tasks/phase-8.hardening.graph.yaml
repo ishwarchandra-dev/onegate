@@ -112,9 +112,13 @@ nodes:
   - id: p8.gate
     title: "Phase 8 gate"
     owner: graph-master
-    status: pending
+    status: done
     depends_on: [p8.load-soak, p8.load-burst, p8.chaos-catalog, p8.crash-recovery, p8.security-review, p8.fuzzing, p8.perf-fixes]
     deliverables:
       - "Gate report + hardening evidence pack"
     acceptance:
       - "All gate criteria verified"
+    evidence:
+      - "docs/gates/phase-8.md — all 4 criteria PASS with linked evidence: soak/burst within budgets (p99 2.3ms, zero errors), chaos 4/4 match with findings register, threat model v2 + govulncheck 0 in CI, kill -9 matrix 3/3 converge (6646/6646 durable)"
+      - "Node evidence pack 8/8 in gate report; carried observations documented (502/503 alerting, in-memory sessions by design, loopback-by-design SSRF posture, toolchain pinning)"
+      - "Gate-time verification: go build/vet/-race green on go1.26.9, govulncheck 0, graph check OK, parity 41/41, web typecheck+build green"
