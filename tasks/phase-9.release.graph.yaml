@@ -2,7 +2,7 @@
 phase: 9
 name: release
 title: "Phase 9 — Single Binary, Distribution & v1.0"
-status: pending
+status: done
 gate:
   - "go:embed dashboard: one binary serves UI + API + proxy"
   - "Build matrix: linux/darwin/windows amd64+arm64 with checksums"
@@ -136,9 +136,13 @@ nodes:
   - id: p9.gate
     title: "Phase 9 gate: v1.0.0 ship decision"
     owner: graph-master
-    status: pending
+    status: done
     depends_on: [p9.embed-decision, p9.embed-pipeline, p9.build-matrix, p9.docker, p9.npx-launcher, p9.cli-polish, p9.user-docs, p9.changelog-v1]
     deliverables:
       - "Ship decision recorded with evidence links"
     acceptance:
       - "All gates 0-9 closed; release checklist 100%"
+    evidence:
+      - "docs/gates/phase-9.md — verdict PASS, ship decision GO: all 4 phase criteria verified (embed one-port evidence x3: pipeline smoke, quickstart verifier step 10, ONEGATE_REQUIRE_EMBED refusal; 6-target matrix + checksums + provenance; launcher smoke-tested with corrupt-refusal proof + publish condition recorded honestly; docs+changelog assembled from graph evidence); release checklist 100% with the npm-publish condition noted; tag v1.0.0 pushed with this commit triggers the release pipeline"
+      - "Gate-commit battery: -race 26 pkgs, graph --check, api-check, cli-docs, launcher 24/24, parity 41/41, web build+typecheck, Playwright e2e 10/10 x2 (after fixing the stale-/tmp data-dir guard in playwright.config.ts), quickstart verifier 14/14, embed refusal green"
+      - "Graph complete: 86/86 nodes across 10 phases; phases 0-9 all status:done"

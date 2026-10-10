@@ -23,9 +23,12 @@ cd "$ROOT"
 
 BIN="${1:-$ROOT/bin/onegate}"
 if [[ ! -x "$BIN" ]]; then
-  echo "quickstart-verify: $BIN is not executable (run: make build)" >&2
+  echo "quickstart-verify: $BIN is not executable (run: make web && make build)" >&2
   exit 1
 fi
+# normalize to an absolute path: the gateway is started from a scratch
+# cwd, so a relative BIN would resolve wrong there (bit the CI wiring)
+BIN="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")"
 
 GW_PORT=17847
 MOCK_PORT=17848

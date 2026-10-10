@@ -38,7 +38,11 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `${ROOT}/bin/onegate -data-dir /tmp/onegate-e2e -port 7420 -log-level warn`,
+      // rm -rf first: a stale data dir from an earlier run (or a prior
+      // session surviving /tmp) silently breaks the first-run-setup
+      // journey — the setup wizard only appears on a fresh dir.
+      // CI has a fresh /tmp per job; this guard is for local runs.
+      command: `rm -rf /tmp/onegate-e2e && exec ${ROOT}/bin/onegate -data-dir /tmp/onegate-e2e -port 7420 -log-level warn`,
       url: "http://127.0.0.1:7420/healthz",
       reuseExistingServer: false,
       timeout: 30_000,
